@@ -1,0 +1,3406 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Super Workbench</title>
+<style>
+  :root, [data-theme="dark"] {
+    --bg: #0c0d10;
+    --bg-sidebar: #111216;
+    --bg-surface: #16181d;
+    --bg-elevated: #1c1f26;
+    --bg-hover: rgba(255, 255, 255, 0.055);
+    --bg-active: rgba(255, 255, 255, 0.09);
+    --bg-code: #0e1015;
+    --border: rgba(255, 255, 255, 0.08);
+    --border-strong: rgba(255, 255, 255, 0.16);
+    --text: #eceef2;
+    --text-sec: #9ba1ae;
+    --text-muted: #666d7a;
+    --accent-bg: #f2f4f8;
+    --accent-fg: #0d0f12;
+    --user-bubble: #1d2028;
+    --shadow-float: 0 12px 36px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+    --shadow-pop: 0 16px 40px rgba(0, 0, 0, 0.55);
+
+    --c-xiu: #e5a95c;
+    --c-agy: #56b6e6;
+    --c-codex: #8f88f5;
+    --c-dsh: #4cc38a;
+    --c-danger: #e55c6c;
+    --c-warn: #e5a95c;
+  }
+
+  [data-theme="light"] {
+    --bg: #fafafa;
+    --bg-sidebar: #f3f3f5;
+    --bg-surface: #ffffff;
+    --bg-elevated: #ffffff;
+    --bg-hover: rgba(15, 23, 42, 0.045);
+    --bg-active: rgba(15, 23, 42, 0.08);
+    --bg-code: #f4f5f8;
+    --border: rgba(15, 23, 42, 0.08);
+    --border-strong: rgba(15, 23, 42, 0.16);
+    --text: #12141a;
+    --text-sec: #525866;
+    --text-muted: #8a919e;
+    --accent-bg: #14161c;
+    --accent-fg: #ffffff;
+    --user-bubble: #efefef;
+    --shadow-float: 0 10px 30px rgba(15, 23, 42, 0.07), 0 1px 2px rgba(15, 23, 42, 0.04);
+    --shadow-pop: 0 14px 36px rgba(15, 23, 42, 0.12);
+
+    --c-xiu: #c77d20;
+    --c-agy: #0284c7;
+    --c-codex: #635bff;
+    --c-dsh: #16a34a;
+    --c-danger: #dc2626;
+    --c-warn: #d97706;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* App Shell */
+  .app {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+  }
+
+  /* Scrollbars */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 99px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+  /* 1. Left Sidebar */
+  aside.sidebar {
+    width: 248px;
+    flex-shrink: 0;
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    transition: width 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.18s;
+    position: relative;
+    z-index: 20;
+  }
+  aside.sidebar.collapsed {
+    width: 0;
+    border-right: none;
+    overflow: hidden;
+    opacity: 0;
+  }
+  .sb-head {
+    height: 52px;
+    padding: 0 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-weight: 650;
+    font-size: 13.5px;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+  }
+  .brand-mark {
+    width: 22px; height: 22px; border-radius: 6px;
+    background: var(--accent-bg); color: var(--accent-fg);
+    display: grid; place-items: center;
+  }
+  .brand-tag {
+    font-size: 10.5px; font-weight: 500; color: var(--text-muted);
+    padding: 1px 6px; border-radius: 99px; border: 1px solid var(--border);
+  }
+
+  .sb-section {
+    padding: 14px 10px 6px;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 11px; font-weight: 600; color: var(--text-muted);
+    letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  .ws-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .ws-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 9px;
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--text-sec);
+    transition: background 0.12s, color 0.12s;
+    position: relative;
+    min-width: 0;
+  }
+  .ws-item:hover { background: var(--bg-hover); color: var(--text); }
+  .ws-item.active { background: var(--bg-active); color: var(--text); font-weight: 550; }
+  .ws-icon { flex-shrink: 0; color: var(--text-muted); display: grid; place-items: center; }
+  .ws-item.active .ws-icon { color: var(--text); }
+  .ws-meta { flex: 1; min-width: 0; }
+  .ws-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
+  .ws-path { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: "Cascadia Code", Consolas, monospace; margin-top: 1px; }
+  .ws-actions {
+    display: flex; align-items: center; gap: 2px;
+    opacity: 0; transition: opacity 0.12s;
+    flex-shrink: 0;
+  }
+  .ws-item:hover .ws-actions { opacity: 1; }
+  .ws-act-btn {
+    width: 24px; height: 24px; border-radius: 6px; border: none; background: transparent;
+    color: var(--text-muted); display: grid; place-items: center; cursor: pointer; padding: 0;
+  }
+  .ws-act-btn:hover { background: var(--bg-active); color: var(--text); }
+  .ws-act-btn.del:hover { color: var(--c-danger); background: rgba(229, 92, 108, 0.12); }
+
+  /* Sidebar Footer: Engine & Model Trigger */
+  .sb-footer {
+    padding: 10px;
+    border-top: 1px solid var(--border);
+    position: relative;
+  }
+  .engine-trigger {
+    width: 100%;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 9px 11px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    cursor: pointer;
+    color: var(--text);
+    text-align: left;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .engine-trigger:hover { border-color: var(--border-strong); background: var(--bg-elevated); }
+  .engine-dots { display: flex; align-items: center; gap: 5px; }
+  .s-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); }
+  .s-dot.on { background: var(--c-dsh); }
+  .s-dot.off { background: var(--c-danger); }
+  .engine-summary { font-size: 11.5px; color: var(--text-sec); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 3px; font-family: "Cascadia Code", Consolas, monospace; }
+
+  /* Floating Model Popover */
+  .model-popover {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: calc(100% + 6px);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: 12px;
+    padding: 14px;
+    box-shadow: var(--shadow-pop);
+    display: none;
+    flex-direction: column;
+    gap: 11px;
+    z-index: 40;
+  }
+  .model-popover.show { display: flex; }
+  .pop-title { font-size: 12px; font-weight: 600; color: var(--text); display: flex; justify-content: space-between; align-items: center; }
+  .field label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+  .field select, .field input {
+    width: 100%;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 9px;
+    color: var(--text);
+    font-size: 12.5px;
+    font-family: inherit;
+    outline: none;
+  }
+  .field select:focus, .field input:focus { border-color: var(--border-strong); }
+  .cli-mini-list { display: flex; gap: 8px; flex-wrap: wrap; padding-top: 6px; border-top: 1px solid var(--border); }
+  .cli-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-sec); }
+
+  /* Icon & General Buttons */
+  .icon-btn {
+    width: 30px; height: 30px; border-radius: 8px;
+    border: 1px solid transparent; background: transparent; color: var(--text-sec);
+    display: grid; place-items: center; cursor: pointer; padding: 0;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+    position: relative;
+  }
+  .icon-btn:hover { background: var(--bg-hover); color: var(--text); }
+  .icon-btn.active { background: var(--bg-active); color: var(--text); border-color: var(--border); }
+  .icon-btn .notif-dot {
+    position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--c-dsh); display: none;
+  }
+  .icon-btn.has-notif .notif-dot { display: block; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 30px; padding: 0 11px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--bg-surface); color: var(--text);
+    font-size: 12.5px; font-weight: 500; cursor: pointer; font-family: inherit;
+    transition: background 0.12s, border-color 0.12s, opacity 0.12s;
+    white-space: nowrap;
+  }
+  .btn:hover:not(:disabled) { background: var(--bg-hover); border-color: var(--border-strong); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn.solid { background: var(--accent-bg); color: var(--accent-fg); border-color: transparent; font-weight: 600; }
+  .btn.solid:hover:not(:disabled) { opacity: 0.9; background: var(--accent-bg); }
+  .btn.danger { color: var(--c-danger); border-color: rgba(229, 92, 108, 0.35); background: rgba(229, 92, 108, 0.07); }
+  .btn.danger:hover:not(:disabled) { background: rgba(229, 92, 108, 0.14); }
+  .btn.sm { height: 26px; padding: 0 9px; font-size: 12px; border-radius: 7px; }
+
+  /* 2. Center Main Column */
+  .main-col {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    position: relative;
+  }
+
+  header.topbar {
+    height: 52px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-shrink: 0;
+    background: var(--bg);
+  }
+  .top-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .ws-crumb { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .ws-crumb-title { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ws-crumb-sub {
+    font-size: 11.5px; color: var(--text-muted);
+    padding: 1px 7px; border-radius: 99px; border: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .top-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 26px; padding: 0 10px; border-radius: 99px;
+    font-size: 11.5px; color: var(--text-sec);
+    background: var(--bg-surface); border: 1px solid var(--border);
+  }
+  .status-pill.running { color: var(--c-dsh); border-color: rgba(76, 195, 138, 0.35); }
+  .pulse-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--c-dsh); animation: pulse 1.3s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }
+
+  /* Disputed Banner */
+  .disputed-bar {
+    display: none; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    padding: 10px 20px; border-bottom: 1px solid rgba(229, 169, 92, 0.35);
+    background: rgba(229, 169, 92, 0.08); font-size: 12.5px;
+  }
+  .disputed-bar.show { display: flex; }
+
+  /* Chat Canvas */
+  .canvas-body {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+    position: relative;
+  }
+  .chat-col {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+  .chat-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 28px 24px 160px;
+  }
+  .chat-inner {
+    max-width: 780px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  /* Empty State */
+  .empty-state {
+    margin: 12vh auto 0;
+    text-align: center;
+    max-width: 460px;
+    color: var(--text-sec);
+  }
+  .empty-state h3 { margin: 0 0 8px; font-size: 18px; font-weight: 600; color: var(--text); letter-spacing: -0.02em; }
+  .empty-state p { margin: 0; font-size: 13.5px; color: var(--text-muted); }
+
+  /* Message Items (Muse / Codex Editorial Style) */
+  .msg-user-wrap {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .msg-user {
+    max-width: 80%;
+    background: var(--user-bubble);
+    border: 1px solid var(--border);
+    border-radius: 16px 16px 4px 16px;
+    padding: 11px 16px;
+    color: var(--text);
+    font-size: 14px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .msg-user-meta {
+    font-size: 11px; color: var(--text-muted); margin-top: 5px; text-align: right;
+    display: flex; align-items: center; justify-content: flex-end; gap: 6px;
+  }
+
+  .msg-agent {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .agent-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .agent-id {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .agent-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .agent-dot.agy { background: var(--c-agy); }
+  .agent-dot.codex { background: var(--c-codex); }
+  .agent-dot.dsh { background: var(--c-dsh); }
+  .agent-dot.xiu { background: var(--c-xiu); }
+  .agent-role { font-weight: 400; color: var(--text-muted); font-size: 12px; }
+  .agent-time { font-size: 11.5px; color: var(--text-muted); font-family: "Cascadia Code", Consolas, monospace; }
+
+  .agent-body {
+    padding-left: 16px;
+    border-left: 1px solid var(--border);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.72;
+    word-break: break-word;
+  }
+  .agent-body h1, .agent-body h2, .agent-body h3 {
+    margin: 14px 0 6px; font-weight: 650; letter-spacing: -0.015em; color: var(--text);
+  }
+  .agent-body h1 { font-size: 17px; }
+  .agent-body h2 { font-size: 15.5px; }
+  .agent-body h3 { font-size: 14.5px; }
+  .agent-body p { margin: 0 0 10px; }
+  .agent-body p:last-child { margin-bottom: 0; }
+  .agent-body ul, .agent-body ol { margin: 6px 0 10px; padding-left: 20px; }
+  .agent-body li { margin: 3px 0; }
+  .agent-body blockquote {
+    margin: 8px 0; padding: 6px 12px; border-left: 2px solid var(--border-strong);
+    color: var(--text-sec); background: var(--bg-hover); border-radius: 0 6px 6px 0;
+  }
+  .agent-body code.inline {
+    background: var(--bg-code); border: 1px solid var(--border);
+    padding: 1px 5px; border-radius: 5px;
+    font-family: "Cascadia Code", Consolas, monospace; font-size: 12.5px;
+  }
+  .code-block {
+    margin: 10px 0; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--bg-code); overflow: hidden;
+  }
+  .code-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 5px 11px; border-bottom: 1px solid var(--border);
+    font-size: 11px; color: var(--text-muted); font-family: "Cascadia Code", Consolas, monospace;
+  }
+  .code-block pre {
+    margin: 0; padding: 11px 13px; overflow-x: auto;
+    font-family: "Cascadia Code", Consolas, monospace; font-size: 12.5px; line-height: 1.55;
+  }
+  .copy-mini {
+    border: none; background: transparent; color: var(--text-muted); font-size: 11px;
+    cursor: pointer; padding: 2px 6px; border-radius: 5px;
+  }
+  .copy-mini:hover { background: var(--bg-hover); color: var(--text); }
+
+  /* Inline Collapsible Execution Trace (Codex/AGY style) */
+  .trace-box {
+    margin: 4px 0 8px 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-surface);
+    overflow: hidden;
+  }
+  .trace-box summary {
+    list-style: none;
+    padding: 8px 12px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    font-size: 12.5px; color: var(--text-sec);
+    user-select: none;
+  }
+  .trace-box summary::-webkit-details-marker { display: none; }
+  .trace-box summary:hover { background: var(--bg-hover); }
+  .trace-logs {
+    border-top: 1px solid var(--border);
+    padding: 9px 12px;
+    max-height: 180px;
+    overflow-y: auto;
+    font-family: "Cascadia Code", Consolas, monospace;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    white-space: pre-wrap;
+    line-height: 1.5;
+    background: var(--bg-code);
+  }
+
+  .handoff-bar {
+    margin-left: 16px;
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  /* Floating Composer Dock (Muse + Codex Style) */
+  .composer-dock {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    padding: 12px 24px 20px;
+    background: linear-gradient(to top, var(--bg) 68%, transparent);
+    pointer-events: none;
+  }
+  .composer {
+    max-width: 780px;
+    margin: 0 auto;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: 16px;
+    box-shadow: var(--shadow-float);
+    padding: 11px 13px 9px;
+    pointer-events: auto;
+    transition: border-color 0.15s;
+  }
+  .composer:focus-within { border-color: var(--text-muted); }
+  .approval-bar {
+    display: none;
+    max-width: 780px;
+    margin: 0 auto 8px;
+    padding: 8px 13px;
+    border-radius: 12px;
+    border: 1px solid var(--border-strong);
+    background: var(--bg-elevated);
+    box-shadow: var(--shadow-sm);
+    pointer-events: auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .approval-bar.show { display: flex; }
+  .approval-info { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-sec); }
+  .approval-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--c-warn); flex-shrink: 0; }
+  textarea#cmdInput {
+    width: 100%;
+    min-height: 44px;
+    max-height: 180px;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.55;
+    resize: none;
+    outline: none;
+    padding: 2px 3px;
+  }
+  textarea#cmdInput::placeholder { color: var(--text-muted); }
+  .composer-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+  }
+  .mode-pills {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    padding: 2px;
+    border-radius: 9px;
+  }
+  .mode-pill {
+    border: none;
+    background: transparent;
+    color: var(--text-sec);
+    padding: 4px 10px;
+    border-radius: 7px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: inherit;
+    transition: background 0.12s, color 0.12s;
+  }
+  .mode-pill:hover { color: var(--text); }
+  .mode-pill.active {
+    background: var(--bg-active);
+    color: var(--text);
+    font-weight: 600;
+  }
+  .send-btn {
+    width: 32px; height: 32px; border-radius: 9px;
+    border: none; background: var(--accent-bg); color: var(--accent-fg);
+    display: grid; place-items: center; cursor: pointer;
+    transition: opacity 0.12s, transform 0.1s;
+    flex-shrink: 0;
+  }
+  .send-btn:hover:not(:disabled) { opacity: 0.88; }
+  .send-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .send-btn.stop { background: var(--c-danger); color: #fff; }
+
+  /* 3. Codex-Mini Style Vertical Paper-Plane Relay Rail (46px) */
+  .mini-rail {
+    width: 46px;
+    flex-shrink: 0;
+    border-left: 1px solid var(--border);
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 16px 0;
+    position: relative;
+    user-select: none;
+  }
+  svg#miniRelaySvg {
+    width: 46px;
+    height: 290px;
+    overflow: visible;
+  }
+  .rail-node { cursor: pointer; }
+  .rail-ring {
+    fill: var(--bg-surface);
+    stroke: var(--border-strong);
+    stroke-width: 1.25;
+    transition: stroke 0.2s, fill 0.2s;
+  }
+  .rail-node:hover .rail-ring { stroke: var(--text-sec); }
+  .rail-node.is-lock .rail-ring { stroke: var(--text); stroke-width: 1.8; }
+  .rail-node.is-running .rail-ring { stroke: var(--c-dsh); stroke-width: 2; }
+  .rail-label {
+    font-size: 9.5px;
+    font-weight: 650;
+    fill: var(--text-sec);
+    font-family: "Cascadia Code", Consolas, sans-serif;
+  }
+  .rail-node.is-lock .rail-label,
+  .rail-node.is-running .rail-label { fill: var(--text); }
+  .rail-ripple { fill: none; stroke: var(--text-sec); stroke-width: 1.2; opacity: 0; }
+  @keyframes miniRipple {
+    0% { r: 14; opacity: 0.8; }
+    100% { r: 24; opacity: 0; }
+  }
+  .rail-ripple.go { animation: miniRipple 0.7s ease-out forwards; }
+  @keyframes breathe {
+    0%, 100% { opacity: 0.35; r: 16; }
+    50% { opacity: 0.9; r: 19; }
+  }
+  .rail-pulse { fill: none; stroke: var(--c-dsh); stroke-width: 1.2; opacity: 0; }
+  .rail-node.is-running .rail-pulse { animation: breathe 1.6s ease-in-out infinite; }
+
+  /* 4. Right Inspector Drawer (Default Collapsed!) */
+  aside.inspector {
+    width: 0;
+    flex-shrink: 0;
+    background: var(--bg-sidebar);
+    border-left: none;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: width 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  aside.inspector.open {
+    width: 360px;
+    border-left: 1px solid var(--border);
+  }
+  .insp-head {
+    height: 52px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    flex-shrink: 0;
+  }
+  .insp-tabs { display: flex; gap: 2px; }
+  .insp-tab {
+    border: none; background: transparent; color: var(--text-muted);
+    padding: 5px 10px; border-radius: 7px; font-size: 12px; font-weight: 550; cursor: pointer;
+    font-family: inherit;
+  }
+  .insp-tab:hover { color: var(--text); }
+  .insp-tab.active { background: var(--bg-active); color: var(--text); }
+  .insp-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .console-pre {
+    flex: 1;
+    min-height: 360px;
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
+    margin: 0;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg-code);
+    font-family: "Cascadia Code", Consolas, monospace;
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: var(--text-sec);
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .insp-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .insp-card-title { font-size: 11.5px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .gate-row { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; padding: 3px 0; }
+  .file-item {
+    display: flex; justify-content: space-between; gap: 8px;
+    font-size: 11.5px; font-family: "Cascadia Code", Consolas, monospace;
+    color: var(--text-sec); padding: 4px 0; border-bottom: 1px solid var(--border);
+  }
+  .file-item:last-child { border-bottom: none; }
+  .milestone-list { display: flex; flex-wrap: wrap; gap: 5px; }
+  .ms-chip {
+    font-size: 11px; padding: 3px 8px; border-radius: 6px;
+    border: 1px solid var(--border); color: var(--text-muted);
+  }
+  .ms-chip.done { color: var(--c-dsh); border-color: rgba(76, 195, 138, 0.35); background: rgba(76, 195, 138, 0.08); }
+  .preview-img { width: 100%; border-radius: 8px; border: 1px solid var(--border); display: block; object-fit: cover; max-height: 180px; }
+
+  /* Modals */
+  .modal-mask {
+    position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(4px);
+    display: none; place-items: center; z-index: 60;
+  }
+  .modal-mask.show { display: grid; }
+  .modal-box {
+    width: 420px; max-width: 92vw;
+    background: var(--bg-elevated); border: 1px solid var(--border-strong);
+    border-radius: 14px; padding: 20px; box-shadow: var(--shadow-pop);
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .modal-box h3 { margin: 0; font-size: 15px; font-weight: 650; }
+  .modal-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+
+  /* Sidebar Settings Button */
+  .sb-settings-wrap { padding: 0 10px 8px; }
+  .sb-settings-btn {
+    width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 8px 10px; border-radius: 9px; border: 1px solid transparent;
+    background: transparent; color: var(--text-sec); cursor: pointer; font-family: inherit; font-size: 13px;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+  .sb-settings-btn:hover { background: var(--bg-hover); color: var(--text); border-color: var(--border); }
+  .sb-badge {
+    font-size: 10.5px; padding: 1px 7px; border-radius: 99px;
+    background: var(--bg-active); color: var(--text-sec); font-family: "Cascadia Code", Consolas, monospace;
+  }
+
+  /* Nested Multi-Thread List under Active Workspace */
+  .thread-tree {
+    margin: 2px 0 6px 14px;
+    padding-left: 10px;
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .thread-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    padding: 5px 8px; border-radius: 7px; cursor: pointer;
+    font-size: 12px; color: var(--text-muted);
+    transition: background 0.12s, color 0.12s;
+  }
+  .thread-item:hover { background: var(--bg-hover); color: var(--text-sec); }
+  .thread-item.active { background: var(--bg-active); color: var(--text); font-weight: 550; }
+  .thread-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .thread-acts { display: flex; gap: 1px; opacity: 0; transition: opacity 0.12s; flex-shrink: 0; }
+  .thread-item:hover .thread-acts { opacity: 1; }
+  .thread-new-btn {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 8px; border-radius: 7px; border: none; background: transparent;
+    color: var(--text-muted); font-size: 11.5px; cursor: pointer; font-family: inherit;
+    text-align: left; transition: background 0.12s, color 0.12s;
+  }
+  .thread-new-btn:hover { background: var(--bg-hover); color: var(--text); }
+
+  /* 2-Column Minimalist Settings Center */
+  .settings-shell {
+    width: 820px; max-width: 94vw; height: 78vh; max-height: 660px;
+    background: var(--bg-elevated); border: 1px solid var(--border-strong);
+    border-radius: 16px; box-shadow: var(--shadow-pop);
+    display: grid; grid-template-columns: 168px 1fr; overflow: hidden;
+  }
+  .settings-nav {
+    background: var(--bg-sidebar); border-right: 1px solid var(--border);
+    padding: 14px 8px; display: flex; flex-direction: column; gap: 2px;
+  }
+  .settings-nav-title {
+    font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;
+    letter-spacing: 0.05em; padding: 4px 10px 8px;
+  }
+  .snav-item {
+    width: 100%; text-align: left; border: none; background: transparent; color: var(--text-sec);
+    padding: 8px 10px; border-radius: 8px; cursor: pointer; font-family: inherit;
+    display: flex; align-items: center; gap: 9px; transition: background 0.12s, color 0.12s;
+  }
+  .snav-item:hover { background: var(--bg-hover); color: var(--text); }
+  .snav-item.active { background: var(--bg-active); color: var(--text); font-weight: 600; }
+  .snav-item svg { flex-shrink: 0; opacity: 0.85; }
+  .snav-title { font-size: 13px; line-height: 1.2; white-space: nowrap; }
+  .settings-main {
+    display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+  }
+  .settings-head {
+    padding: 15px 20px 12px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0;
+  }
+  .settings-pane {
+    flex: 1; overflow-y: auto; padding: 14px 20px 22px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+
+  /* Collapsible Beginner Explanation Fold (Hidden by default!) */
+  details.explain-fold {
+    border: 1px solid var(--border); border-radius: 9px; background: var(--bg-surface);
+  }
+  details.explain-fold summary {
+    list-style: none; padding: 7px 12px; cursor: pointer;
+    font-size: 12px; color: var(--text-muted); user-select: none;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  }
+  details.explain-fold summary::-webkit-details-marker { display: none; }
+  details.explain-fold summary:hover { color: var(--text-sec); }
+  .explain-content {
+    padding: 0 12px 10px; font-size: 12.5px; color: var(--text-sec); line-height: 1.65;
+    border-top: 1px solid var(--border); padding-top: 9px;
+  }
+  .explain-content strong { color: var(--text); }
+  .memory-banner {
+    border: 1px solid var(--border); border-radius: 10px; background: var(--bg-surface);
+    margin-bottom: 4px;
+  }
+  .memory-banner summary {
+    list-style: none; padding: 7px 12px; cursor: pointer; font-size: 12px; color: var(--text-sec);
+    display: flex; align-items: center; justify-content: space-between; user-select: none;
+  }
+  .memory-banner summary::-webkit-details-marker { display: none; }
+  .memory-body {
+    padding: 9px 12px 11px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--text-sec); line-height: 1.6;
+  }
+  .skill-card {
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 11px;
+    padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;
+    transition: border-color 0.15s;
+  }
+  .skill-card.active { border-color: var(--border-strong); }
+  .skill-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .skill-slug {
+    font-size: 11px; font-family: "Cascadia Code", Consolas, monospace;
+    color: var(--text-sec); background: var(--bg-code); border: 1px solid var(--border);
+    padding: 1px 6px; border-radius: 5px;
+  }
+  .skill-src {
+    font-size: 10.5px; color: var(--text-muted); border: 1px solid var(--border);
+    padding: 1px 6px; border-radius: 99px;
+  }
+  .toggle-chip {
+    border: 1px solid var(--border); background: transparent; color: var(--text-sec);
+    padding: 3px 9px; border-radius: 99px; font-size: 11.5px; cursor: pointer; font-family: inherit;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+  .toggle-chip:hover { border-color: var(--border-strong); color: var(--text); }
+  .toggle-chip.on { background: var(--accent-bg); color: var(--accent-fg); border-color: transparent; font-weight: 600; }
+
+  /* Composer Slash Skill Menu & Attached Skill Chips */
+  .composer { position: relative; }
+  .attached-skills { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+  .attached-skills:empty { display: none; }
+  .skill-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 8px; border-radius: 99px; font-size: 11.5px;
+    background: var(--bg-active); border: 1px solid var(--border-strong); color: var(--text);
+    font-family: "Cascadia Code", Consolas, monospace;
+  }
+  .skill-pill button { border: none; background: transparent; color: var(--text-muted); cursor: pointer; padding: 0; font-size: 13px; line-height: 1; }
+  .skill-pill button:hover { color: var(--text); }
+  .slash-menu {
+    position: absolute; left: 12px; right: 12px; bottom: calc(100% + 8px);
+    background: var(--bg-elevated); border: 1px solid var(--border-strong);
+    border-radius: 12px; box-shadow: var(--shadow-pop); padding: 6px;
+    max-height: 240px; overflow-y: auto; display: none; z-index: 35;
+  }
+  .slash-menu.show { display: block; }
+  .slash-item {
+    width: 100%; text-align: left; border: none; background: transparent; color: var(--text);
+    padding: 8px 10px; border-radius: 8px; cursor: pointer; font-family: inherit;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  }
+  .slash-item:hover { background: var(--bg-hover); }
+
+  /* Codex / AGY Style Composer (+) Action Button & Attachment Previews */
+  .composer.drag-over { border-color: var(--c-agy); box-shadow: 0 0 0 2px rgba(86, 182, 230, 0.2); }
+  .plus-btn {
+    width: 30px; height: 30px; border-radius: 9px;
+    border: 1px solid var(--border); background: var(--bg-surface); color: var(--text-sec);
+    display: grid; place-items: center; cursor: pointer; padding: 0; flex-shrink: 0;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+  .plus-btn:hover, .plus-btn.open { background: var(--bg-active); color: var(--text); border-color: var(--border-strong); }
+  .plus-menu {
+    position: absolute; left: 10px; bottom: calc(100% + 8px); width: 224px;
+    background: var(--bg-elevated); border: 1px solid var(--border-strong);
+    border-radius: 12px; box-shadow: var(--shadow-pop); padding: 5px;
+    display: none; flex-direction: column; gap: 2px; z-index: 36;
+  }
+  .plus-menu.show { display: flex; }
+  .plus-item {
+    width: 100%; border: none; background: transparent; color: var(--text);
+    padding: 8px 10px; border-radius: 8px; cursor: pointer; font-family: inherit; font-size: 12.5px;
+    display: flex; align-items: center; gap: 9px; text-align: left;
+  }
+  .plus-item:hover { background: var(--bg-hover); }
+  .plus-item svg { color: var(--text-sec); flex-shrink: 0; }
+  .att-thumb {
+    position: relative; width: 46px; height: 46px; border-radius: 8px;
+    border: 1px solid var(--border-strong); overflow: hidden; background: var(--bg-code); flex-shrink: 0;
+  }
+  .att-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .att-thumb .att-rm {
+    position: absolute; top: 2px; right: 2px; width: 16px; height: 16px; border-radius: 50%;
+    border: none; background: rgba(0, 0, 0, 0.72); color: #fff; font-size: 11px;
+    display: grid; place-items: center; cursor: pointer; padding: 0; line-height: 1;
+  }
+  .msg-att-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; justify-content: flex-end; }
+  .msg-att-img { max-height: 140px; max-width: 220px; border-radius: 8px; border: 1px solid var(--border); cursor: pointer; display: block; object-fit: cover; }
+  .msg-att-file {
+    display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 7px;
+    border: 1px solid var(--border); background: var(--bg-surface); font-size: 11.5px; color: var(--text-sec);
+    font-family: "Cascadia Code", Consolas, monospace;
+  }
+
+  /* Inspector: Live Git Diff & AIGC Screening Room */
+  .file-item.clickable { cursor: pointer; border-radius: 6px; padding: 5px 7px; margin: 0 -7px; }
+  .file-item.clickable:hover { background: var(--bg-hover); color: var(--text); }
+  .diff-badge {
+    font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px;
+    font-family: "Cascadia Code", Consolas, monospace; flex-shrink: 0;
+  }
+  .diff-badge.M { color: var(--c-warn); background: rgba(229, 169, 92, 0.14); }
+  .diff-badge.A, .diff-badge.U { color: var(--c-dsh); background: rgba(76, 195, 138, 0.14); }
+  .diff-badge.D { color: var(--c-danger); background: rgba(229, 92, 108, 0.14); }
+  .diff-pre {
+    margin: 0; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--bg-code); font-family: "Cascadia Code", Consolas, monospace;
+    font-size: 11px; line-height: 1.5; max-height: 260px; overflow: auto; white-space: pre;
+  }
+  .diff-add { color: var(--c-dsh); background: rgba(76, 195, 138, 0.09); display: block; }
+  .diff-del { color: var(--c-danger); background: rgba(229, 92, 108, 0.1); display: block; }
+  .diff-hunk { color: var(--c-agy); display: block; }
+  .aigc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .aigc-shot { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg-code); cursor: pointer; }
+  .aigc-shot img { width: 100%; height: 92px; object-fit: cover; display: block; }
+  .aigc-shot-cap { padding: 4px 6px; font-size: 10.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .aigc-video { width: 100%; border-radius: 8px; border: 1px solid var(--border); background: #000; max-height: 210px; }
+  .aigc-audio { width: 100%; height: 32px; }
+
+  /* Toast */
+  .toast {
+    position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
+    background: var(--accent-bg); color: var(--accent-fg);
+    padding: 8px 16px; border-radius: 99px; font-size: 12.5px; font-weight: 550;
+    box-shadow: var(--shadow-pop); display: none; z-index: 80;
+  }
+
+  @media (max-width: 900px) {
+    aside.sidebar { position: fixed; left: 0; top: 0; bottom: 0; }
+    aside.inspector.open { position: fixed; right: 0; top: 0; bottom: 0; z-index: 35; width: 320px; }
+    .mini-rail { display: none; }
+    .settings-shell { grid-template-columns: 1fr; height: 86vh; }
+    .settings-nav { flex-direction: row; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--border); padding: 8px; }
+    .snav-sub { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- 1. Left Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sb-head">
+      <div class="brand">
+        <div class="brand-mark">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        </div>
+        <span>Super Workbench</span>
+        <span class="brand-tag">4.0</span>
+      </div>
+      <button class="icon-btn" title="收起侧栏" onclick="toggleSidebar()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></svg>
+      </button>
+    </div>
+
+    <div class="sb-section">
+      <span>Workspaces</span>
+      <button class="icon-btn" style="width:24px;height:24px;" title="新建工作空间" onclick="openWsModal()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </div>
+    <div class="ws-list" id="wsList"></div>
+
+    <!-- Left Sidebar Settings Entry (Skills / MCP / Plugins / Engines) -->
+    <div class="sb-settings-wrap">
+      <button class="sb-settings-btn" onclick="openSettings('skills')">
+        <span style="display:flex;align-items:center;gap:9px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span>Settings</span>
+        </span>
+        <span class="sb-badge" id="sbSkillBadge">Skills</span>
+      </button>
+    </div>
+
+    <!-- Bottom Compact Quick Model Switcher + Advanced Engine Studio Entry -->
+    <div class="sb-footer">
+      <div class="model-popover" id="modelPopover">
+        <div class="pop-title">
+          <span>快速切换模型</span>
+          <button class="icon-btn" style="width:22px;height:22px;" onclick="toggleModelPopover(false)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="field">
+          <label id="quickPlannerLabel">策划模型 (AGY)</label>
+          <select id="quickPlannerModel" onchange="quickSaveModels()"></select>
+        </div>
+        <div class="field">
+          <label id="quickBuilderLabel">执行模型 (Codex)</label>
+          <select id="quickBuilderModel" onchange="quickSaveModels()"></select>
+        </div>
+        <div class="field" id="quickEffortField">
+          <label>执行思考深度</label>
+          <select id="quickBuilderEffort" onchange="quickSaveModels()">
+            <option value="low">轻量快速 (low)</option>
+            <option value="medium">均衡模式 (medium)</option>
+            <option value="high">深度思考 (high · 推荐)</option>
+            <option value="xhigh">极限推理 (xhigh)</option>
+          </select>
+        </div>
+        <div style="padding-top:8px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+          <button class="btn sm" style="width:100%;justify-content:center;" onclick="toggleModelPopover(false); openStudioModal();">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            高级：配置角色引擎 / 接入 API
+          </button>
+        </div>
+      </div>
+
+      <button class="engine-trigger" onclick="toggleModelPopover()">
+        <div style="min-width:0;flex:1;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <span style="font-size:12px;font-weight:600;">模型与引擎</span>
+            <div class="engine-dots">
+              <i class="s-dot on" id="dot-planner" title="策划槽位"></i>
+              <i class="s-dot on" id="dot-builder" title="执行槽位"></i>
+              <i class="s-dot on" id="dot-reviewer" title="质检槽位"></i>
+            </div>
+          </div>
+          <div class="engine-summary" id="engineSummary">Neon High · gpt-6.2-sol</div>
+        </div>
+      </button>
+    </div>
+  </aside>
+
+  <!-- 2. Center Main Canvas -->
+  <div class="main-col">
+    <header class="topbar">
+      <div class="top-left">
+        <button class="icon-btn" id="btnOpenSidebar" style="display:none;" title="展开侧栏" onclick="toggleSidebar()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></svg>
+        </button>
+        <div class="ws-crumb">
+          <span class="ws-crumb-title" id="wsTitle">深空乱斗</span>
+          <span style="color:var(--text-muted);font-size:13px;">/</span>
+          <span style="font-size:13px;color:var(--text-sec);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px;" id="threadCrumb">主对话</span>
+          <span class="ws-crumb-sub" id="wsSub">R133</span>
+        </div>
+      </div>
+
+      <div class="top-right">
+        <span class="status-pill" id="statusPill">就绪</span>
+        <button class="btn" id="btnLaunch" onclick="launchGame()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+          <span id="btnLaunchText">启动试玩</span>
+        </button>
+        <button class="icon-btn" id="btnCompact" title="压缩当前对话上下文（提炼长期记忆，防长对话遗忘）" onclick="compactCurrentThread()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6"/><path d="M20 10h-6V4"/><path d="m14 10 7-7"/><path d="m3 21 7-7"/></svg>
+        </button>
+        <button class="icon-btn" title="新手指引与快捷键说明" onclick="openGuideModal()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+        </button>
+        <button class="icon-btn" title="清空当前对话记录" onclick="clearCurrentChat()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+        </button>
+        <button class="icon-btn" id="btnTheme" title="切换浅色 / 深色主题" onclick="toggleTheme()"></button>
+        <button class="icon-btn" id="btnInspector" title="展开/收起工程抽屉（终端 · 文件 · 门禁）" onclick="toggleInspector()">
+          <span class="notif-dot"></span>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- 48h Objection Arbitration Banner (Only when disputed) -->
+    <div class="disputed-bar" id="disputedBanner">
+      <div>
+        <strong style="color:var(--c-warn)">收到技术实现异议（48h SLA 仲裁）</strong>
+        <span id="disputedSummary" style="margin-left:8px;color:var(--text-sec);"></span>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button class="btn sm" onclick="arbitrate('维持原案')">维持原案</button>
+        <button class="btn sm" onclick="arbitrate('采纳替代方案')">采纳替代方案</button>
+        <button class="btn sm danger" onclick="arbitrate('拆延')">先拆延</button>
+      </div>
+    </div>
+
+    <div class="canvas-body">
+      <div class="chat-col">
+        <div class="chat-scroll" id="chatScroll">
+          <div class="chat-inner" id="chatStream"></div>
+        </div>
+
+        <!-- Floating Muse / Codex Style Composer -->
+        <div class="composer-dock">
+          <div class="approval-bar" id="approvalBar">
+            <div class="approval-info">
+              <span class="approval-dot"></span>
+              <span>方案已就绪，确认后交棒执行（可在下方输入框补充说明）</span>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
+              <button class="btn sm" onclick="handleApproval('reject')">取消</button>
+              <button class="btn sm solid" onclick="handleApproval('approve')">批准执行</button>
+            </div>
+          </div>
+          <div class="composer" id="composerBox">
+            <div class="slash-menu" id="slashMenu"></div>
+            <div class="plus-menu" id="plusMenu">
+              <button class="plus-item" onclick="triggerFileUpload('image')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                <span>添加图片 / 截图</span>
+              </button>
+              <button class="plus-item" onclick="triggerFileUpload('file')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                <span>添加本地文件 / 附件</span>
+              </button>
+              <button class="plus-item" onclick="togglePlusMenu(false); toggleSlashMenu(true);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>
+                <span>挂载技能 (/ Skill)</span>
+              </button>
+            </div>
+            <input type="file" id="imgPicker" accept="image/*" multiple style="display:none;" onchange="handlePickedFiles(this.files); this.value='';" />
+            <input type="file" id="filePicker" multiple style="display:none;" onchange="handlePickedFiles(this.files); this.value='';" />
+
+            <div class="attached-skills" id="attachedSkillsBar"></div>
+            <textarea id="cmdInput" rows="1" placeholder="输入想法或指令… 支持点 + 添加图片/附件/技能，直接粘贴截图，或 Ctrl+Enter 发送"></textarea>
+            <div class="composer-bar">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                <button class="plus-btn" id="btnPlus" title="添加图片、附件或挂载技能" onclick="togglePlusMenu()">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                </button>
+                <div class="mode-pills" id="modePills">
+                  <button class="mode-pill active" data-mode="agy" onclick="setMode('agy')">
+                    <i class="agent-dot agy" style="width:6px;height:6px;"></i><span id="pill-label-agy">策划 · AGY</span>
+                  </button>
+                  <button class="mode-pill" data-mode="codex" onclick="setMode('codex')">
+                    <i class="agent-dot codex" style="width:6px;height:6px;"></i><span id="pill-label-codex">执行 · CDX</span>
+                  </button>
+                  <button class="mode-pill" data-mode="pipeline" onclick="setMode('pipeline')">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    全自动流转
+                  </button>
+                  <button class="mode-pill" data-mode="dsh" onclick="setMode('dsh')">
+                    <i class="agent-dot dsh" style="width:6px;height:6px;"></i><span id="pill-label-dsh">质检 · DSH</span>
+                  </button>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:11.5px;color:var(--text-muted);" id="composerHint"></span>
+                <button class="send-btn" id="btnSend" title="发送 (Ctrl+Enter)" onclick="handlePrimarySend()">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Ultra-Minimal Codex-Mini Style Vertical Paper-Plane Relay Rail -->
+      <div class="mini-rail" title="多智能体极简交接微轨（点击节点可切换对话对象）">
+        <svg id="miniRelaySvg" viewBox="0 0 46 290">
+          <!-- Hairline vertical track -->
+          <line x1="23" y1="30" x2="23" y2="260" stroke="var(--border-strong)" stroke-width="1" stroke-dasharray="2 3" />
+          <path id="miniTrail" d="" fill="none" stroke="var(--text-sec)" stroke-width="1.4" opacity="0" />
+
+          <g class="rail-node" id="rnode-xiu" transform="translate(23,30)" onclick="setMode('agy')">
+            <title>修 · 制作人 / 终审</title>
+            <circle class="rail-ripple" id="rrip-xiu" r="14" />
+            <circle class="rail-pulse" r="16" />
+            <circle class="rail-ring" r="13.5" />
+            <circle cx="9.5" cy="-9.5" r="2.8" fill="var(--c-xiu)" />
+            <text y="3.5" text-anchor="middle" class="rail-label">修</text>
+          </g>
+
+          <g class="rail-node" id="rnode-agy" transform="translate(23,106)" onclick="setMode('agy')">
+            <title id="rtitle-agy">策划 · Antigravity</title>
+            <circle class="rail-ripple" id="rrip-agy" r="14" />
+            <circle class="rail-pulse" r="16" />
+            <circle class="rail-ring" r="13.5" />
+            <circle cx="9.5" cy="-9.5" r="2.8" fill="var(--c-agy)" />
+            <text y="3.2" text-anchor="middle" class="rail-label" id="rtxt-agy">AGY</text>
+          </g>
+
+          <g class="rail-node" id="rnode-codex" transform="translate(23,182)" onclick="setMode('codex')">
+            <title id="rtitle-codex">执行 · Codex</title>
+            <circle class="rail-ripple" id="rrip-codex" r="14" />
+            <circle class="rail-pulse" r="16" />
+            <circle class="rail-ring" r="13.5" />
+            <circle cx="9.5" cy="-9.5" r="2.8" fill="var(--c-codex)" />
+            <text y="3.2" text-anchor="middle" class="rail-label" id="rtxt-codex">CDX</text>
+          </g>
+
+          <g class="rail-node" id="rnode-dsh" transform="translate(23,258)" onclick="setMode('dsh')">
+            <title id="rtitle-dsh">质检 · DSH</title>
+            <circle class="rail-ripple" id="rrip-dsh" r="14" />
+            <circle class="rail-pulse" r="16" />
+            <circle class="rail-ring" r="13.5" />
+            <circle cx="9.5" cy="-9.5" r="2.8" fill="var(--c-dsh)" />
+            <text y="3.2" text-anchor="middle" class="rail-label" id="rtxt-dsh">DSH</text>
+          </g>
+
+          <!-- Minimalist 12px Paper Plane -->
+          <g id="miniPlane" opacity="0">
+            <polygon points="-6,-4.5 7,0 -6,4.5 -3,0" fill="var(--text)" />
+          </g>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Right Inspector Drawer (Default Collapsed!) -->
+  <aside class="inspector" id="inspector">
+    <div class="insp-head">
+      <div class="insp-tabs">
+        <button class="insp-tab active" data-tab="console" onclick="switchInspTab('console')">终端日志</button>
+        <button class="insp-tab" data-tab="workspace" onclick="switchInspTab('workspace')">改动与文件</button>
+        <button class="insp-tab" data-tab="artifacts" onclick="switchInspTab('artifacts')">审片与预览</button>
+      </div>
+      <button class="icon-btn" title="收起抽屉" onclick="toggleInspector(false)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="insp-body" id="inspConsoleTab">
+      <pre class="console-pre" id="consoleBox">等待执行任务… 后台 CLI 实时日志将在此同步显示。</pre>
+    </div>
+
+    <div class="insp-body" id="inspWorkspaceTab" style="display:none;">
+      <div class="insp-card" id="gatesCard">
+        <div class="insp-card-title">客观门禁与实测指标</div>
+        <div id="gatesList"></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">
+          <button class="btn sm" onclick="runSelfCheck()">跑自检三条</button>
+          <button class="btn sm" onclick="runDshVerify()">DSH 核验</button>
+          <button class="btn sm" onclick="openObjectionPrompt()">提异议</button>
+        </div>
+      </div>
+
+      <div class="insp-card" id="milestonesCard">
+        <div class="insp-card-title" id="milestonesTitle">阶段进度里程碑</div>
+        <div class="milestone-list" id="milestonesRow"></div>
+      </div>
+
+      <div class="insp-card" id="gitCard" style="display:none;">
+        <div class="insp-card-title" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>Git 代码改动</span>
+          <span id="gitBranchTag" style="font-weight:400;text-transform:none;font-family:Consolas,monospace;"></span>
+        </div>
+        <div id="gitFilesBox"></div>
+      </div>
+
+      <div class="insp-card">
+        <div class="insp-card-title" style="display:flex;justify-content:space-between;">
+          <span>最近修改文件（点击查看源码/Diff）</span>
+          <span id="liveDiskAge" style="font-weight:400;text-transform:none;"></span>
+        </div>
+        <div id="recentFilesBox"></div>
+      </div>
+
+      <div class="insp-card" id="diffViewerCard" style="display:none;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+          <span class="insp-card-title" id="diffViewerTitle" style="text-transform:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">文件预览</span>
+          <button class="icon-btn" style="width:22px;height:22px;" onclick="document.getElementById('diffViewerCard').style.display='none'">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <pre class="diff-pre" id="diffViewerBody"></pre>
+      </div>
+    </div>
+
+    <div class="insp-body" id="inspArtifactsTab" style="display:none;">
+      <div class="insp-card" id="aigcScreeningCard" style="display:none;">
+        <div class="insp-card-title">AIGC 分镜画廊与音视频审片室</div>
+        <div id="aigcVideosBox" style="display:flex;flex-direction:column;gap:8px;"></div>
+        <div id="aigcAudiosBox" style="display:flex;flex-direction:column;gap:6px;"></div>
+        <div class="aigc-grid" id="aigcImagesBox"></div>
+      </div>
+
+      <div class="insp-card">
+        <div class="insp-card-title">最新施工单 (NEXT_FOR_CODEX.md)</div>
+        <pre class="console-pre" id="codexPreview" style="min-height:150px;max-height:240px;"></pre>
+      </div>
+      <div class="insp-card" id="mediaCard">
+        <div class="insp-card-title">画面与概念图预览</div>
+        <div id="mediaGrid" style="display:flex;flex-direction:column;gap:10px;"></div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- Modal: Create / Rename Workspace -->
+<div class="modal-mask" id="wsModal">
+  <div class="modal-box">
+    <h3 id="wsModalTitle">新建工作空间</h3>
+    <div class="field">
+      <label>空间名称</label>
+      <input id="newWsName" placeholder="例如：SuperWorkbench-OSS / 个人网站" />
+    </div>
+    <div class="field">
+      <label>本地目录路径（若不存在将自动创建）</label>
+      <input id="newWsPath" placeholder="例如：E:\Projects\MyWorkspace" />
+    </div>
+    <div class="field" id="wsTypeField">
+      <label>空间类型</label>
+      <select id="newWsType">
+        <option value="general">通用研发项目</option>
+        <option value="aigc-studio">AIGC 制片空间（脚本 / 分镜 / 剪辑）</option>
+        <option value="web-app">Web / 前端全栈</option>
+        <option value="python">Python / 脚本与数据</option>
+        <option value="godot-game">Godot 游戏工程</option>
+        <option value="docs">策划与文档空间</option>
+      </select>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeWsModal()">取消</button>
+      <button class="btn solid" id="wsModalSubmit" onclick="submitWsModal()">创建空间</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Safe Delete Workspace -->
+<div class="modal-mask" id="delModal">
+  <div class="modal-box">
+    <h3>移除工作空间</h3>
+    <div style="font-size:13px;color:var(--text-sec);line-height:1.6;">
+      确定要从工作台移除空间 <strong id="delWsName" style="color:var(--text);"></strong> 吗？<br/>
+      <span style="color:var(--text-muted);font-size:12px;">安全提示：此操作仅从工作台列表中移除配置，绝对不会删除你硬盘上的任何本地文件。</span>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-sec);cursor:pointer;">
+      <input type="checkbox" id="delPurgeMsgs" checked />
+      同时清理该空间的历史对话记录
+    </label>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeDelModal()">取消</button>
+      <button class="btn danger" onclick="confirmDeleteWorkspace()">确认移除</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Unified 2-Column Settings & Extensions Center -->
+<div class="modal-mask" id="studioModal" onclick="if(event.target===this) closeStudioModal()">
+  <div class="settings-shell">
+    <!-- Left Settings Navigation (Minimalist single-line) -->
+    <div class="settings-nav">
+      <div class="settings-nav-title">Settings</div>
+
+      <button class="snav-item active" id="snav-skills" onclick="switchStudioTab('skills')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>
+        <span class="snav-title">技能 Skills</span>
+      </button>
+
+      <button class="snav-item" id="snav-roles" onclick="switchStudioTab('roles')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span class="snav-title">角色与引擎</span>
+      </button>
+
+      <button class="snav-item" id="snav-engines" onclick="switchStudioTab('engines')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg>
+        <span class="snav-title">引擎与 API</span>
+      </button>
+
+      <button class="snav-item" id="snav-mcp" onclick="switchStudioTab('mcp')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>
+        <span class="snav-title">外部工具 MCP</span>
+      </button>
+
+      <button class="snav-item" id="snav-plugins" onclick="switchStudioTab('plugins')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 2H8.6c-.4 0-.8.2-1.1.5-.3.3-.5.7-.5 1.1v12.8c0 .4.2.8.5 1.1.3.3.7.5 1.1.5h9.8c.4 0 .8-.2 1.1-.5.3-.3.5-.7.5-1.1V6.5L15.5 2z"/><path d="M3 7.6v12.8c0 .4.2.8.5 1.1.3.3.7.5 1.1.5h9.8"/><path d="M15 2v5h5"/></svg>
+        <span class="snav-title">工作流插件</span>
+      </button>
+    </div>
+
+    <!-- Right Settings Content -->
+    <div class="settings-main">
+      <div class="settings-head">
+        <div>
+          <h3 id="settingsPaneTitle" style="margin:0;font-size:15px;">技能 Skills</h3>
+        </div>
+        <button class="icon-btn" onclick="closeStudioModal()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <!-- Pane 1: Skills (Fully Functional!) -->
+      <div class="settings-pane" id="pane-skills">
+        <details class="explain-fold">
+          <summary><span>ⓘ 什么是 Skill（技能）？点此查看说明</span><span>▾</span></summary>
+          <div class="explain-content">
+            <strong>Skill 就像给 AI 员工发的《岗位 SOP 手册》（标准 <code class="inline">SKILL.md</code>）。</strong><br/>
+            你可以在下方开关决定「全局常驻」或「仅在当前空间生效」，也可以随时在对话框输入 <code class="inline">/</code> 临时点名召唤某一项技能——无论是本地 CLI 还是 DeepSeek / Ollama 纯 API，都会自动按这份规范执行。
+          </div>
+        </details>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+          <div style="display:flex;gap:4px;" id="skillFilterBar">
+            <button class="btn sm solid" data-sf="all" onclick="setSkillFilter('all')">全部</button>
+            <button class="btn sm" data-sf="active" onclick="setSkillFilter('active')">已启用</button>
+            <button class="btn sm" data-sf="custom" onclick="setSkillFilter('custom')">自定义</button>
+            <button class="btn sm" data-sf="ext" onclick="setSkillFilter('ext')">本机发现</button>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn sm" onclick="toggleSkillCreateBox()">+ 新建技能</button>
+            <button class="btn sm" onclick="toggleSkillImportBox()">导入本地 Skill</button>
+          </div>
+        </div>
+
+        <!-- Inline Create New Skill Form (Zero YAML needed!) -->
+        <div class="insp-card" id="skillCreateBox" style="display:none;">
+          <div class="insp-card-title">创建新技能（自动生成标准 SKILL.md，无需懂 YAML）</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div class="field"><label>技能名称</label><input id="newSkillName" placeholder="例如：小红书爆款文案 / 漫剧分镜" /></div>
+            <div class="field">
+              <label>保存范围</label>
+              <select id="newSkillScope">
+                <option value="user">全局可用（存放在工作台技能库）</option>
+                <option value="workspace">仅当前空间（存放在项目 .agents/skills/）</option>
+              </select>
+            </div>
+          </div>
+          <div class="field"><label>一句话用途说明（展示给小白和 / 菜单）</label><input id="newSkillDesc" placeholder="例如：按爆款钩子+结构化分镜表输出 60 秒漫剧脚本" /></div>
+          <div class="field">
+            <label>具体执行规范（直接用大白话写清楚要求即可）</label>
+            <textarea id="newSkillBody" rows="4" style="width:100%;background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-family:inherit;font-size:12.5px;resize:vertical;" placeholder="例如：&#10;1. 前 3 秒必须给出强悬念冲突；&#10;2. 输出 Markdown 表格，包含镜号、景别、台词、生图提示词；&#10;3. 保持主角外貌描述跨镜一致。"></textarea>
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:6px;">
+            <button class="btn sm" onclick="toggleSkillCreateBox(false)">取消</button>
+            <button class="btn sm solid" onclick="submitCreateSkill()">创建并启用</button>
+          </div>
+        </div>
+
+        <!-- Inline Import Local Skill Form -->
+        <div class="insp-card" id="skillImportBox" style="display:none;">
+          <div class="insp-card-title">导入本地已有 Skill（支持 SKILL.md 文件或技能文件夹路径）</div>
+          <div style="display:flex;gap:8px;">
+            <input id="importSkillPath" style="flex:1;background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:12.5px;" placeholder="粘贴本地技能文件夹路径或 SKILL.md 绝对路径，如 E:\my-skills\storyboard" />
+            <button class="btn sm solid" onclick="submitImportSkill()">一键导入</button>
+          </div>
+        </div>
+
+        <div id="skillsListContainer" style="display:flex;flex-direction:column;gap:8px;"></div>
+      </div>
+
+      <!-- Pane 2: Role Slot Bindings -->
+      <div class="settings-pane" id="pane-roles" style="display:none;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <details class="explain-fold" style="flex:1;">
+            <summary><span>ⓘ 如何分配这三个角色？点此查看说明</span><span>▾</span></summary>
+            <div class="explain-content">
+              <strong>只需为「核心执行」绑定 1 个本地 CLI（如 Codex / Claude / AGY）</strong>，其余「策划」与「质检」岗位无论绑 CLI 还是接 DeepSeek / Ollama 纯 API 均可正常工作。
+            </div>
+          </details>
+          <button class="btn sm" onclick="autoRecommendRoles()">一键推荐配置</button>
+        </div>
+        <div id="roleSlotsContainer" style="display:flex;flex-direction:column;gap:10px;"></div>
+        <div class="insp-card" style="flex-direction:row;align-items:center;justify-content:space-between;gap:12px;">
+          <div style="min-width:0;">
+            <div style="font-size:12.5px;font-weight:550;color:var(--text);">自动流水线 · 执行前暂停审批</div>
+            <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">开启后，「全自动」模式在策划输出方案后暂停，等你点一下批准再动手改文件。</div>
+          </div>
+          <label style="display:flex;align-items:center;cursor:pointer;flex-shrink:0;">
+            <input type="checkbox" id="toggleApproveGate" onchange="toggleApproveBeforeBuild(this.checked)" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" />
+          </label>
+        </div>
+        <div class="modal-foot">
+          <button class="btn solid" onclick="saveRoleBindings()">保存角色配置</button>
+        </div>
+      </div>
+
+      <!-- Pane 3: Engines & Custom API / Ollama -->
+      <div class="settings-pane" id="pane-engines" style="display:none;">
+        <div class="insp-card">
+          <div class="insp-card-title">本机已检测 CLI 与自定义引擎</div>
+          <div id="enginesListBox" style="display:flex;flex-direction:column;gap:6px;"></div>
+        </div>
+
+        <div class="insp-card">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+            <span class="insp-card-title">接入新的云端 API 或本地模型（点模板自动填表）</span>
+            <div style="display:flex;gap:4px;flex-wrap:wrap;">
+              <button class="btn sm" onclick="presetEngine('ollama')">免费本地 Ollama</button>
+              <button class="btn sm" onclick="presetEngine('deepseek')">DeepSeek API</button>
+              <button class="btn sm" onclick="presetEngine('openrouter')">OpenRouter</button>
+              <button class="btn sm" onclick="presetEngine('custom-cli')">自定义命令行</button>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div class="field"><label>给它起个名字</label><input id="engName" placeholder="例如：DeepSeek 策划 / 本地模型" /></div>
+            <div class="field">
+              <label>连接方式</label>
+              <select id="engKind" onchange="toggleEngKindFields()">
+                <option value="openai-compat">云端 API / 本地 Ollama（免安装 CLI）</option>
+                <option value="custom-cli">本机命令行工具（CLI）</option>
+              </select>
+            </div>
+          </div>
+          <div id="engApiFields" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div class="field" style="grid-column:span 2;"><label>接口地址（点上方模板自动填好）</label><input id="engBaseUrl" placeholder="https://api.deepseek.com/v1 或 http://localhost:11434/v1" /></div>
+            <div class="field"><label>API 密钥（本地 Ollama 无需填写）</label><input id="engApiKey" type="password" placeholder="粘贴 sk-... 或留空" /></div>
+            <div class="field"><label>使用的模型名称</label><input id="engModel" placeholder="例如 deepseek-reasoner / qwen2.5:14b" /></div>
+          </div>
+          <div id="engCliFields" style="display:none;">
+            <div class="field">
+              <label>命令行模板（{prompt} 会自动替换为你的指令）</label>
+              <input id="engCmdTpl" placeholder="例如：aider --yes --message &quot;{prompt}&quot;" />
+            </div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;">
+            <button class="btn solid sm" onclick="submitAddEngine()">添加到引擎库</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pane 4: MCP (Visual Zero-JSON Registry & 1-Click CLI Sync) -->
+      <div class="settings-pane" id="pane-mcp" style="display:none;">
+        <details class="explain-fold">
+          <summary><span>ⓘ 什么是 MCP（外部工具协议）？点此查看说明</span><span>▾</span></summary>
+          <div class="explain-content">
+            <strong>如果说 Skill 是“教 AI 怎么想的说明书”，那么 MCP 就是给 AI 接上的“手和眼”</strong>——让它能操控浏览器、读取 Figma、查 GitHub 或连本地 ComfyUI。在这里填好后，可一键同步到你本机已安装的 AGY / Codex / Claude CLI，无需手写 JSON。
+          </div>
+        </details>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+          <div style="display:flex;gap:6px;">
+            <button class="btn sm solid" onclick="toggleMcpForm(true)">+ 添加 MCP 工具</button>
+            <button class="btn sm" onclick="scanCliMcps()">检测本机已有 MCP</button>
+          </div>
+          <span style="font-size:11.5px;color:var(--text-muted);" id="mcpCliHint">同步目标：检测中…</span>
+        </div>
+
+        <!-- Inline Zero-JSON Add/Edit MCP Form -->
+        <div class="insp-card" id="mcpFormBox" style="display:none;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;">
+            <span class="insp-card-title">一键套用模板或自定义接入</span>
+            <div style="display:flex;gap:4px;flex-wrap:wrap;" id="mcpTemplateBtns"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div class="field"><label>工具标识（英文，如 playwright）</label><input id="mcpName" placeholder="例如：playwright / github / figma" /></div>
+            <div class="field">
+              <label>连接方式</label>
+              <select id="mcpTransport" onchange="toggleMcpTransportFields()">
+                <option value="stdio">本地命令（stdio / npx / uvx）</option>
+                <option value="http">远程或本地接口（HTTP URL）</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div class="field"><label>中文名称（选填）</label><input id="mcpTitle" placeholder="例如：Playwright 浏览器" /></div>
+            <div class="field"><label>用途简介（选填）</label><input id="mcpDesc" placeholder="一句话说明这个工具做什么" /></div>
+          </div>
+          <div id="mcpStdioFields" style="display:grid;grid-template-columns:0.65fr 1.35fr;gap:8px;">
+            <div class="field"><label>启动命令</label><input id="mcpCmd" placeholder="npx / uvx / python" /></div>
+            <div class="field"><label>启动参数（空格分隔）</label><input id="mcpArgs" placeholder="-y @playwright/mcp@latest" /></div>
+          </div>
+          <div id="mcpHttpFields" style="display:none;">
+            <div class="field"><label>MCP 服务地址（URL）</label><input id="mcpUrl" placeholder="https://mcp.figma.com/mcp 或 http://127.0.0.1:8188/mcp" /></div>
+          </div>
+          <div class="field">
+            <label>环境变量 / 密钥（选填，每行一条 KEY=VALUE）</label>
+            <textarea id="mcpEnv" rows="2" style="width:100%;background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-family:Consolas,monospace;font-size:12px;resize:vertical;" placeholder="例如：GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx"></textarea>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-sec);cursor:pointer;">
+              <input type="checkbox" id="mcpAutoSync" checked /> 保存并一键同步到本机已装 CLI
+            </label>
+            <div style="display:flex;gap:6px;">
+              <button class="btn sm" onclick="toggleMcpForm(false)">取消</button>
+              <button class="btn sm solid" onclick="submitMcpServer()">保存配置</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Registered MCP Servers -->
+        <div id="mcpListBox" style="display:flex;flex-direction:column;gap:8px;"></div>
+
+        <!-- Quick Templates (when list is empty or for quick browse) -->
+        <div class="insp-card" id="mcpQuickTemplatesCard">
+          <div class="insp-card-title">常用 MCP 模板（点一下自动填表）</div>
+          <div id="mcpQuickTemplatesGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px;"></div>
+        </div>
+
+        <!-- Native CLI Scan Result (only shown when scanned) -->
+        <div class="insp-card" id="mcpScanBox" style="display:none;"></div>
+      </div>
+
+      <!-- Pane 5: Plugins (Workspace Presets & Extensibility) -->
+      <div class="settings-pane" id="pane-plugins" style="display:none;">
+        <details class="explain-fold">
+          <summary><span>ⓘ 什么是工作流插件（Plugins）？点此查看说明</span><span>▾</span></summary>
+          <div class="explain-content">
+            <strong>工作流插件把某一类项目的「右侧专属抽屉面板 + 目录初始化 + 门禁检查 + 推荐技能」打包成开箱即用的行业套装</strong>，且按工作空间隔离，互不干扰。
+          </div>
+        </details>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <div class="skill-card active">
+            <div class="skill-top">
+              <div><strong style="font-size:13px;">Godot 游戏研发实验室</strong> <span class="skill-src">内置已启用</span></div>
+              <span style="font-size:11.5px;color:var(--c-dsh);">godot-game 空间生效</span>
+            </div>
+            <div style="font-size:12px;color:var(--text-sec);">提供提交前自检三条、FPS/输入延迟硬指标灯、轮次里程碑、实机截图预览与一键启动试玩。</div>
+          </div>
+          <div class="skill-card active">
+            <div class="skill-top">
+              <div><strong style="font-size:13px;">AIGC 漫剧与短片制片空间</strong> <span class="skill-src">内置已启用</span></div>
+              <span style="font-size:11.5px;color:var(--c-dsh);">aigc-studio 空间生效</span>
+            </div>
+            <div style="font-size:12px;color:var(--text-sec);">自动初始化 5 级制片目录（脚本/分镜/素材/剪辑/成片），角色槽位切换为「编剧 · 制片 · 审片」，右侧抽屉内置分镜网格画廊、5 阶段进度条与 HTML5 音视频审片室。</div>
+          </div>
+          <div class="skill-card active">
+            <div class="skill-top">
+              <div><strong style="font-size:13px;">Live Git Diff 与源码审查抽屉</strong> <span class="skill-src">内置已启用</span></div>
+              <span style="font-size:11.5px;color:var(--c-dsh);">general / web / python / godot</span>
+            </div>
+            <div style="font-size:12px;color:var(--text-sec);">在右侧抽屉的「代码改动 / 文件」页签实时查看 Git 变更文件、红绿高亮代码 Diff 与无 Git 目录下的行号源码预览。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Beginner 30-Second Quick-Start Guide -->
+<div class="modal-mask" id="guideModal" onclick="if(event.target===this) closeGuideModal()">
+  <div class="modal-box" style="width:540px;max-height:85vh;overflow-y:auto;">
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <h3>30 秒上手指南 · Super Workbench</h3>
+      <button class="icon-btn" onclick="closeGuideModal()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="insp-card">
+      <div class="insp-card-title">三位智能体怎么配合？（完全不用切窗口）</div>
+      <div style="font-size:13px;color:var(--text-sec);line-height:1.7;">
+        <div><strong style="color:var(--text);">1. 策划（讨论出方案）</strong>：你有模糊想法时先找它聊，它会像搭档一样帮你想方案；满意后直接点它回复下方的 <strong>「采纳方案并交棒」</strong>。</div>
+        <div style="margin-top:6px;"><strong style="color:var(--text);">2. 执行（动手改文件/跑命令）</strong>：负责真正把代码写进本地硬盘、跑测试或执行剪辑脚本（只需这一位绑定本地 CLI 即可）。</div>
+        <div style="margin-top:6px;"><strong style="color:var(--text);">3. 质检（独立把关）</strong>：自动检查改完后的结果有没有漏项、报错或风险。</div>
+      </div>
+    </div>
+
+    <div class="insp-card">
+      <div class="insp-card-title">最顺手的 4 个操作技巧</div>
+      <div style="font-size:12.5px;color:var(--text-sec);line-height:1.75;">
+        <div>• <strong>快速换模型</strong>：点左下角「模型与引擎」直接下拉切换，选完即生效；</div>
+        <div>• <strong>快捷指派</strong>：输入框开头打 <code class="inline">@codex</code> / <code class="inline">@agy</code> / <code class="inline">@auto</code> 自动切换目标，按 <code class="inline">Ctrl+Enter</code> 发送；</div>
+        <div>• <strong>看底层过程</strong>：执行时可直接点对话里的「执行步骤 ▾」，或点右上角最右侧图标展开完整终端抽屉；</div>
+        <div>• <strong>安全管理空间</strong>：左侧新建项目空间，悬停可重命名或移出（移出绝不会删硬盘文件）。</div>
+      </div>
+    </div>
+
+    <div class="modal-foot">
+      <button class="btn solid" onclick="closeGuideModal()">知道了，开始工作</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const RAIL_Y = { xiu: 30, agy: 106, codex: 182, dsh: 258 };
+const ROLE_INFO = {
+  xiu: { name: "修", role: "制作人" },
+  agy: { name: "Antigravity", role: "策划 · 审计" },
+  codex: { name: "Codex", role: "核心主程" },
+  dsh: { name: "DSH", role: "独立质检" }
+};
+
+let currentMode = "agy";
+let currentInspTab = "console";
+let lastMsgId = null;
+let lastChatSig = "";
+let railAnim = null;
+let editingWsId = null;
+let deletingWsId = null;
+let latestSnap = null;
+
+// --- Theme (Obsidian Dark <-> Muse Paper Light) ---
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  localStorage.setItem("sw_theme", theme);
+  const btn = document.getElementById("btnTheme");
+  btn.innerHTML = theme === "dark"
+    ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>`
+    : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>`;
+}
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute("data-theme") || "dark";
+  applyTheme(cur === "dark" ? "light" : "dark");
+}
+applyTheme(localStorage.getItem("sw_theme") || "dark");
+
+// --- Sidebar & Inspector Toggles ---
+function toggleSidebar() {
+  const sb = document.getElementById("sidebar");
+  const collapsed = sb.classList.toggle("collapsed");
+  document.getElementById("btnOpenSidebar").style.display = collapsed ? "grid" : "none";
+}
+function toggleInspector(force) {
+  const el = document.getElementById("inspector");
+  const isOpen = force !== undefined ? force : !el.classList.contains("open");
+  el.classList.toggle("open", isOpen);
+  document.getElementById("btnInspector").classList.toggle("active", isOpen);
+}
+function switchInspTab(tab) {
+  currentInspTab = tab;
+  document.querySelectorAll(".insp-head .insp-tab").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+  document.getElementById("inspConsoleTab").style.display = tab === "console" ? "flex" : "none";
+  document.getElementById("inspWorkspaceTab").style.display = tab === "workspace" ? "flex" : "none";
+  document.getElementById("inspArtifactsTab").style.display = tab === "artifacts" ? "flex" : "none";
+}
+
+// --- Role Slots & Universal Engine Studio Modal ---
+function toggleModelPopover(force) {
+  const pop = document.getElementById("modelPopover");
+  const show = force !== undefined ? force : !pop.classList.contains("show");
+  pop.classList.toggle("show", show);
+}
+document.addEventListener("click", e => {
+  const pop = document.getElementById("modelPopover");
+  if (pop && pop.classList.contains("show") && !e.target.closest(".sb-footer")) {
+    pop.classList.remove("show");
+  }
+});
+
+async function quickSaveModels() {
+  if (!latestSnap) return;
+  const roles = JSON.parse(JSON.stringify(latestSnap.roles || {}));
+  const pMod = document.getElementById("quickPlannerModel")?.value;
+  const bMod = document.getElementById("quickBuilderModel")?.value;
+  const bEff = document.getElementById("quickBuilderEffort")?.value;
+  if (roles.planner && pMod) roles.planner.model = pMod;
+  if (roles.builder && bMod) roles.builder.model = bMod;
+  if (roles.builder && bEff) roles.builder.effort = bEff;
+  try {
+    const res = await api("/api/roles", { roles });
+    render(res.snapshot);
+    showToast("模型切换已生效");
+  } catch (e) { showToast(e.message); }
+}
+
+function openGuideModal() { document.getElementById("guideModal").classList.add("show"); }
+function closeGuideModal() { document.getElementById("guideModal").classList.remove("show"); }
+
+let currentSkillFilter = "all";
+let attachedSkillIds = [];
+
+const SETTINGS_META = {
+  skills: ["技能 Skills", "一处安装，所有本地 CLI 与纯 API 模型共享生效"],
+  roles: ["角色与引擎绑定", "自由为策划 / 执行 / 质检三个岗位分配底层引擎"],
+  engines: ["引擎与 API 库", "管理本机已检测 CLI，或接入免费本地 Ollama 与云端 API"],
+  mcp: ["外部工具 MCP", "给 AI 接上浏览器、Figma、数据库与 ComfyUI 等外部工具"],
+  plugins: ["工作流插件 Plugins", "按工作空间隔离的行业抽屉面板、门禁与套装"]
+};
+
+function openSettings(tab = "skills") {
+  renderStudioModal();
+  renderSkillsPane();
+  switchStudioTab(tab);
+  document.getElementById("studioModal").classList.add("show");
+}
+function openStudioModal() { openSettings("roles"); }
+function closeStudioModal() {
+  document.getElementById("studioModal").classList.remove("show");
+}
+function switchStudioTab(tab) {
+  ["skills", "roles", "engines", "mcp", "plugins"].forEach(k => {
+    document.getElementById("snav-" + k)?.classList.toggle("active", k === tab);
+    const pane = document.getElementById("pane-" + k);
+    if (pane) pane.style.display = k === tab ? "flex" : "none";
+  });
+  const [title] = SETTINGS_META[tab] || SETTINGS_META.skills;
+  document.getElementById("settingsPaneTitle").textContent = title;
+  if (tab === "skills") renderSkillsPane();
+}
+
+function setSkillFilter(f) {
+  currentSkillFilter = f;
+  document.querySelectorAll("#skillFilterBar button").forEach(b => {
+    b.classList.toggle("solid", b.dataset.sf === f);
+  });
+  renderSkillsPane();
+}
+function toggleSkillCreateBox(force) {
+  const el = document.getElementById("skillCreateBox");
+  const show = force !== undefined ? force : el.style.display === "none";
+  el.style.display = show ? "flex" : "none";
+  if (show) document.getElementById("skillImportBox").style.display = "none";
+}
+function toggleSkillImportBox(force) {
+  const el = document.getElementById("skillImportBox");
+  const show = force !== undefined ? force : el.style.display === "none";
+  el.style.display = show ? "flex" : "none";
+  if (show) document.getElementById("skillCreateBox").style.display = "none";
+}
+
+function renderSkillsPane() {
+  const box = document.getElementById("skillsListContainer");
+  if (!box || !latestSnap) return;
+  const list = latestSnap.skills || [];
+  const filtered = list.filter(s => {
+    if (currentSkillFilter === "active") return s.active;
+    if (currentSkillFilter === "custom") return s.source === "user" || s.source === "workspace";
+    if (currentSkillFilter === "ext") return String(s.source || "").startsWith("ext-");
+    return true;
+  });
+
+  if (!filtered.length) {
+    box.innerHTML = `<div style="text-align:center;padding:28px 12px;color:var(--text-muted);font-size:12.5px;">该分类下暂无技能。点上方「+ 新建技能」即可用大白话写一个！</div>`;
+    return;
+  }
+
+  box.innerHTML = filtered.map(s => `
+    <div class="skill-card ${s.active ? 'active' : ''}">
+      <div class="skill-top">
+        <div style="min-width:0;flex:1;">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <strong style="font-size:13px;">${escapeHtml(s.name)}</strong>
+            <span class="skill-slug">/${escapeHtml(s.slug)}</span>
+            <span class="skill-src">${escapeHtml(s.source_label)}</span>
+          </div>
+          <div style="font-size:12px;color:var(--text-sec);margin-top:4px;">${escapeHtml(s.description)}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
+          <button class="toggle-chip ${s.enabled_global ? 'on' : ''}" title="在所有工作空间中自动生效" onclick="toggleSkill('${escapeHtml(s.id)}','global',${!s.enabled_global})">全局</button>
+          <button class="toggle-chip ${s.enabled_workspace ? 'on' : ''}" title="仅在当前工作空间生效" onclick="toggleSkill('${escapeHtml(s.id)}','workspace',${!s.enabled_workspace})">本空间</button>
+          ${s.editable ? `<button class="ws-act-btn del" title="删除自定义技能" onclick="deleteSkill('${escapeHtml(s.id)}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>` : ""}
+        </div>
+      </div>
+      <details style="font-size:11.5px;color:var(--text-muted);">
+        <summary style="cursor:pointer;user-select:none;">查看规范正文</summary>
+        <pre style="margin:6px 0 0;padding:8px 10px;border-radius:8px;background:var(--bg-code);border:1px solid var(--border);white-space:pre-wrap;font-family:Consolas,monospace;color:var(--text-sec);max-height:150px;overflow-y:auto;">${escapeHtml(s.body)}</pre>
+      </details>
+    </div>`).join("");
+}
+
+async function toggleSkill(id, scope, enabled) {
+  try {
+    const res = await api("/api/skills", { action: "toggle", id, scope, enabled });
+    render(res.snapshot, true);
+    renderSkillsPane();
+    showToast(enabled ? `已启用技能（${scope === 'global' ? '全局' : '当前空间'}）` : "已关闭该技能");
+  } catch (e) { showToast(e.message); }
+}
+
+async function submitCreateSkill() {
+  const name = document.getElementById("newSkillName").value.trim();
+  const description = document.getElementById("newSkillDesc").value.trim();
+  const body = document.getElementById("newSkillBody").value.trim();
+  const scope = document.getElementById("newSkillScope").value;
+  if (!name || !body) { showToast("请填写技能名称和具体规范内容"); return; }
+  try {
+    const res = await api("/api/skills", { action: "create", name, description, body, scope });
+    document.getElementById("newSkillName").value = "";
+    document.getElementById("newSkillDesc").value = "";
+    document.getElementById("newSkillBody").value = "";
+    toggleSkillCreateBox(false);
+    render(res.snapshot, true);
+    renderSkillsPane();
+    showToast(`已创建并启用技能：${name}`);
+  } catch (e) { showToast(e.message); }
+}
+
+async function submitImportSkill() {
+  const source_path = document.getElementById("importSkillPath").value.trim();
+  if (!source_path) { showToast("请粘贴本地 SKILL.md 或技能文件夹路径"); return; }
+  try {
+    const res = await api("/api/skills", { action: "import", source_path });
+    document.getElementById("importSkillPath").value = "";
+    toggleSkillImportBox(false);
+    render(res.snapshot, true);
+    renderSkillsPane();
+    showToast("导入成功，已自动全局启用");
+  } catch (e) { showToast(e.message); }
+}
+
+async function deleteSkill(id) {
+  if (!confirm("确定删除该自定义技能？（不会影响内置技能）")) return;
+  try {
+    const res = await api("/api/skills", { action: "delete", id });
+    render(res.snapshot, true);
+    renderSkillsPane();
+    showToast("已删除技能");
+  } catch (e) { showToast(e.message); }
+}
+
+// --- Composer Slash (/) Skill Picker ---
+function toggleSlashMenu(force, filterText = "") {
+  const menu = document.getElementById("slashMenu");
+  const show = force !== undefined ? force : !menu.classList.contains("show");
+  if (!show) { menu.classList.remove("show"); return; }
+  const list = (latestSnap?.skills || []).filter(s => {
+    if (!filterText) return true;
+    const q = filterText.toLowerCase();
+    return s.slug.toLowerCase().includes(q) || s.name.toLowerCase().includes(q) || (s.description || "").toLowerCase().includes(q);
+  });
+  if (!list.length) { menu.classList.remove("show"); return; }
+  menu.innerHTML =
+    `<div style="font-size:11px;color:var(--text-muted);padding:4px 8px 6px;display:flex;justify-content:space-between;"><span>点选临时挂载技能（本条指令生效）</span><a href="javascript:void(0)" style="color:var(--text-sec);" onclick="toggleSlashMenu(false);openSettings('skills')">管理全部 →</a></div>` +
+    list.slice(0, 12).map(s => `
+      <button class="slash-item" onclick="attachSkill('${escapeHtml(s.id)}')">
+        <div style="min-width:0;">
+          <div style="font-size:12.5px;font-weight:600;">/${escapeHtml(s.slug)} <span style="font-weight:400;color:var(--text-sec);margin-left:4px;">${escapeHtml(s.name)}</span></div>
+          <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(s.description)}</div>
+        </div>
+        <span class="skill-src">${s.active ? '已常驻' : escapeHtml(s.source_label)}</span>
+      </button>`).join("");
+  menu.classList.add("show");
+}
+
+function attachSkill(skillId) {
+  if (!attachedSkillIds.includes(skillId)) attachedSkillIds.push(skillId);
+  if (/^\/\S*$/.test(cmdInput.value.trim())) cmdInput.value = "";
+  else cmdInput.value = cmdInput.value.replace(/(?:^|\s)\/\S*$/, "").trimStart();
+  toggleSlashMenu(false);
+  renderAttachedSkills();
+  cmdInput.focus();
+}
+let pendingAttachments = [];
+
+function togglePlusMenu(force) {
+  const menu = document.getElementById("plusMenu");
+  const btn = document.getElementById("btnPlus");
+  const show = force !== undefined ? force : !menu.classList.contains("show");
+  menu.classList.toggle("show", show);
+  if (btn) btn.classList.toggle("open", show);
+  if (show) toggleSlashMenu(false);
+}
+document.addEventListener("click", e => {
+  const pm = document.getElementById("plusMenu");
+  if (pm && pm.classList.contains("show") && !e.target.closest("#plusMenu") && !e.target.closest("#btnPlus")) {
+    togglePlusMenu(false);
+  }
+  const sm = document.getElementById("slashMenu");
+  if (sm && sm.classList.contains("show") && !e.target.closest("#slashMenu") && !e.target.closest("#cmdInput") && !e.target.closest("#plusMenu")) {
+    toggleSlashMenu(false);
+  }
+});
+
+function triggerFileUpload(kind) {
+  togglePlusMenu(false);
+  const el = document.getElementById(kind === "image" ? "imgPicker" : "filePicker");
+  if (el) el.click();
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function handlePickedFiles(fileList) {
+  if (!fileList || !fileList.length) return;
+  for (const file of Array.from(fileList)) {
+    if (file.size > 15 * 1024 * 1024) {
+      showToast(`文件过大（上限 15 MB）：${file.name}`);
+      continue;
+    }
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("读取文件失败"));
+        reader.readAsDataURL(file);
+      });
+      const res = await api("/api/upload", {
+        filename: file.name || "pasted.png",
+        mime_type: file.type || "",
+        data_base64: dataUrl
+      });
+      if (res.attachment) {
+        pendingAttachments.push(res.attachment);
+        renderAttachedSkills();
+      }
+    } catch (e) {
+      showToast(e.message || `上传失败：${file.name}`);
+    }
+  }
+}
+
+function removeAttachment(attId) {
+  pendingAttachments = pendingAttachments.filter(a => a.id !== attId);
+  renderAttachedSkills();
+}
+
+function removeAttachedSkill(skillId) {
+  attachedSkillIds = attachedSkillIds.filter(x => x !== skillId);
+  renderAttachedSkills();
+}
+
+function renderAttachedSkills() {
+  const bar = document.getElementById("attachedSkillsBar");
+  const skillMap = Object.fromEntries((latestSnap?.skills || []).map(s => [s.id, s]));
+
+  const attHtml = pendingAttachments.map(a => {
+    if (a.is_image) {
+      const src = `/api/image?path=${encodeURIComponent(a.path)}`;
+      return `<div class="att-thumb" title="${escapeHtml(a.name)}"><img src="${src}"/><button class="att-rm" onclick="removeAttachment('${escapeHtml(a.id)}')">&times;</button></div>`;
+    }
+    return `<span class="skill-pill" title="${escapeHtml(a.path)}">${escapeHtml(a.name)}${a.size ? ' · ' + formatFileSize(a.size) : ''}<button onclick="removeAttachment('${escapeHtml(a.id)}')">&times;</button></span>`;
+  }).join("");
+
+  const skillHtml = attachedSkillIds.map(id => {
+    const s = skillMap[id];
+    if (!s) return "";
+    return `<span class="skill-pill">/${escapeHtml(s.slug)}<button onclick="removeAttachedSkill('${escapeHtml(id)}')">&times;</button></span>`;
+  }).join("");
+
+  bar.innerHTML = attHtml + skillHtml;
+}
+
+function autoRecommendRoles() {
+  if (!latestSnap) return;
+  const engines = latestSnap.engines || [];
+  const readyIds = new Set(engines.filter(e => e.ready).map(e => e.id));
+  const pick = (list) => list.find(id => readyIds.has(id)) || list[0];
+  const engMap = Object.fromEntries(engines.map(e => [e.id, e]));
+  const p = pick(["agy", "claude", "gemini", "codex"]);
+  const b = pick(["codex", "claude", "agy", "gemini"]);
+  const r = pick(["dsh", "agy", "codex", "claude", "gemini"]);
+  latestSnap.roles.planner = { ...(latestSnap.roles.planner || {}), engine: p, model: engMap[p]?.default_model || "" };
+  latestSnap.roles.builder = { ...(latestSnap.roles.builder || {}), engine: b, model: engMap[b]?.default_model || "", effort: "high" };
+  latestSnap.roles.reviewer = { ...(latestSnap.roles.reviewer || {}), engine: r, model: engMap[r]?.default_model || "" };
+  renderStudioModal();
+  showToast("已按本机环境自动匹配推荐阵容，点击「保存生效」即可");
+}
+
+function renderStudioModal() {
+  if (!latestSnap) return;
+  const roles = latestSnap.roles || {};
+  const engines = latestSnap.engines || [];
+  const engMap = Object.fromEntries(engines.map(e => [e.id, e]));
+
+  const slotMeta = [
+    { id: "planner", title: "1. 策划 / 方案（AIGC：编剧与分镜）", hint: "负责思考讨论，CLI 或纯 API 均可" },
+    { id: "builder", title: "2. 核心执行（AIGC：制片与剪辑）", hint: "负责改代码跑命令，推荐绑定本地 CLI" },
+    { id: "reviewer", title: "3. 独立质检（AIGC：审片与检查）", hint: "负责审查把关，CLI 或纯 API 均可" }
+  ];
+
+  const readyOpts = engines.filter(e => e.ready);
+  const notReadyOpts = engines.filter(e => !e.ready);
+
+  document.getElementById("roleSlotsContainer").innerHTML = slotMeta.map(s => {
+    const r = roles[s.id] || {};
+    const curEng = engMap[r.engine] || engines[0] || {};
+    const curModel = r.model || curEng.default_model || "";
+    const optHtml = [
+      readyOpts.length ? `<optgroup label="本机可用引擎">${readyOpts.map(e => `<option value="${escapeHtml(e.id)}" ${e.id === r.engine ? 'selected' : ''}>${escapeHtml(e.name)} ${e.kind === 'openai-compat' ? '· API' : '· CLI'}</option>`).join("")}</optgroup>` : "",
+      notReadyOpts.length ? `<optgroup label="尚未安装">${notReadyOpts.map(e => `<option value="${escapeHtml(e.id)}" ${e.id === r.engine ? 'selected' : ''}>${escapeHtml(e.name)}（未检测到）</option>`).join("")}</optgroup>` : ""
+    ].join("");
+
+    const models = curEng.models || [];
+    const hasCurInList = models.some(m => m.id === curModel);
+    const modelControl = (curEng.kind === "openai-compat" || models.length <= 1)
+      ? `<input id="slot-model-${s.id}" value="${escapeHtml(curModel)}" placeholder="输入模型名称" />`
+      : `<select id="slot-model-${s.id}">
+          ${!hasCurInList && curModel ? `<option value="${escapeHtml(curModel)}" selected>${escapeHtml(curModel)}</option>` : ""}
+          ${models.map(m => `<option value="${escapeHtml(m.id)}" ${m.id === curModel ? 'selected' : ''}>${escapeHtml(m.label || m.id)}</option>`).join("")}
+        </select>`;
+
+    const warnApi = (s.id === "builder" && curEng.kind === "openai-compat")
+      ? `<div style="font-size:11px;color:var(--c-warn);margin-top:4px;">提示：纯 API 无法直接修改硬盘里的代码文件；如需自动写代码，建议为「核心执行」选一个本地 CLI。</div>`
+      : "";
+
+    return `
+      <div class="insp-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+          <strong style="font-size:13px;">${s.title}</strong>
+          <span style="font-size:11px;color:var(--text-muted);">${s.hint}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1.1fr 1.25fr ${curEng.supports_effort ? '0.8fr' : ''};gap:8px;">
+          <div class="field">
+            <label>底层引擎</label>
+            <select id="slot-eng-${s.id}" onchange="onSlotEngineChange('${s.id}')">${optHtml}</select>
+          </div>
+          <div class="field">
+            <label>选择模型</label>
+            ${modelControl}
+          </div>
+          ${curEng.supports_effort ? `
+          <div class="field">
+            <label>思考深度</label>
+            <select id="slot-effort-${s.id}">
+              ${[["low","轻量"],["medium","均衡"],["high","深度"],["xhigh","极限"]].map(([lv, nm]) => `<option value="${lv}" ${lv === (r.effort || 'high') ? 'selected' : ''}>${nm} (${lv})</option>`).join("")}
+            </select>
+          </div>` : ""}
+        </div>
+        ${warnApi}
+      </div>`;
+  }).join("");
+
+  document.getElementById("enginesListBox").innerHTML = engines.map(e => `
+    <div class="gate-row" style="padding:5px 0;border-bottom:1px solid var(--border);">
+      <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+        <i class="s-dot ${e.ready ? 'on' : 'off'}"></i>
+        <div style="min-width:0;">
+          <div style="font-size:12.5px;font-weight:550;">${escapeHtml(e.name)} <span style="font-size:11px;color:var(--text-muted);font-weight:400;">· ${e.kind === 'openai-compat' ? '云端/本地 API' : '本地 CLI'}</span></div>
+          <div style="font-size:11px;color:var(--text-muted);font-family:Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(e.base_url || e.path || e.command_template || '未在本机检测到')}</div>
+        </div>
+      </div>
+      ${!e.builtin ? `<button class="btn sm danger" onclick="deleteCustomEngine('${e.id}')">移除</button>` : `<span style="font-size:11px;color:var(--text-muted);">${e.ready ? '已就绪' : '未安装'}</span>`}
+    </div>`).join("");
+
+  const gateToggle = document.getElementById("toggleApproveGate");
+  if (gateToggle) gateToggle.checked = Boolean(latestSnap?.settings?.approve_before_build);
+
+  renderMcpPane();
+}
+
+function onSlotEngineChange(slotId) {
+  const newEngId = document.getElementById("slot-eng-" + slotId).value;
+  const eng = (latestSnap?.engines || []).find(e => e.id === newEngId);
+  if (!latestSnap.roles) latestSnap.roles = {};
+  if (!latestSnap.roles[slotId]) latestSnap.roles[slotId] = {};
+  latestSnap.roles[slotId].engine = newEngId;
+  latestSnap.roles[slotId].model = eng?.default_model || "";
+  renderStudioModal();
+}
+
+async function saveRoleBindings() {
+  const payload = {};
+  ["planner", "builder", "reviewer"].forEach(slotId => {
+    const engEl = document.getElementById("slot-eng-" + slotId);
+    const modEl = document.getElementById("slot-model-" + slotId);
+    const effEl = document.getElementById("slot-effort-" + slotId);
+    payload[slotId] = {
+      engine: engEl ? engEl.value : "",
+      model: modEl ? modEl.value.trim() : "",
+      effort: effEl ? effEl.value : "high"
+    };
+  });
+  try {
+    const res = await api("/api/roles", { roles: payload });
+    render(res.snapshot);
+    closeStudioModal();
+    showToast("角色与引擎配置已生效");
+  } catch (e) { showToast(e.message); }
+}
+
+function toggleEngKindFields() {
+  const kind = document.getElementById("engKind").value;
+  document.getElementById("engApiFields").style.display = kind === "openai-compat" ? "grid" : "none";
+  document.getElementById("engCliFields").style.display = kind === "custom-cli" ? "block" : "none";
+}
+
+function presetEngine(type) {
+  if (type === "ollama") {
+    document.getElementById("engKind").value = "openai-compat";
+    toggleEngKindFields();
+    document.getElementById("engName").value = "Ollama Local";
+    document.getElementById("engBaseUrl").value = "http://localhost:11434/v1";
+    document.getElementById("engApiKey").value = "";
+    document.getElementById("engModel").value = "qwen2.5:14b";
+  } else if (type === "deepseek") {
+    document.getElementById("engKind").value = "openai-compat";
+    toggleEngKindFields();
+    document.getElementById("engName").value = "DeepSeek API";
+    document.getElementById("engBaseUrl").value = "https://api.deepseek.com/v1";
+    document.getElementById("engModel").value = "deepseek-reasoner";
+  } else if (type === "openrouter") {
+    document.getElementById("engKind").value = "openai-compat";
+    toggleEngKindFields();
+    document.getElementById("engName").value = "OpenRouter";
+    document.getElementById("engBaseUrl").value = "https://openrouter.ai/api/v1";
+    document.getElementById("engModel").value = "anthropic/claude-sonnet-4";
+  } else {
+    document.getElementById("engKind").value = "custom-cli";
+    toggleEngKindFields();
+    document.getElementById("engName").value = "Aider CLI";
+    document.getElementById("engCmdTpl").value = 'aider --yes --message "{prompt}"';
+  }
+}
+
+async function submitAddEngine() {
+  const kind = document.getElementById("engKind").value;
+  const payload = {
+    action: "add",
+    kind,
+    name: document.getElementById("engName").value.trim(),
+    base_url: document.getElementById("engBaseUrl").value.trim(),
+    api_key: document.getElementById("engApiKey").value.trim(),
+    default_model: document.getElementById("engModel").value.trim(),
+    command_template: document.getElementById("engCmdTpl").value.trim()
+  };
+  try {
+    const res = await api("/api/engines", payload);
+    latestSnap = res.snapshot;
+    render(res.snapshot);
+    renderStudioModal();
+    document.getElementById("engName").value = "";
+    document.getElementById("engApiKey").value = "";
+    showToast(`已接入新引擎：${payload.name}`);
+  } catch (e) { showToast(e.message); }
+}
+
+async function deleteCustomEngine(id) {
+  try {
+    const res = await api("/api/engines", { action: "delete", id });
+    latestSnap = res.snapshot;
+    render(res.snapshot);
+    renderStudioModal();
+    showToast("已移除自定义引擎");
+  } catch (e) { showToast(e.message); }
+}
+
+// --- Visual MCP Manager ---
+function renderMcpPane() {
+  const mcp = latestSnap?.mcp || { servers: [], templates: [], last_scan: {} };
+  const clis = latestSnap?.clis || {};
+  const readyClis = ["agy", "codex", "claude"].filter(c => clis[c]?.installed).map(c => c.toUpperCase());
+  const hint = document.getElementById("mcpCliHint");
+  if (hint) {
+    hint.textContent = readyClis.length ? `可一键同步至：${readyClis.join(" / ")}` : "未检测到支持 MCP 的本地 CLI";
+  }
+
+  const templates = mcp.templates || [];
+  const tplBtns = document.getElementById("mcpTemplateBtns");
+  if (tplBtns) {
+    tplBtns.innerHTML = templates.map(t => `<button class="btn sm" onclick="applyMcpTemplate('${escapeHtml(t.id)}')">${escapeHtml(t.title)}</button>`).join("");
+  }
+
+  const quickGrid = document.getElementById("mcpQuickTemplatesGrid");
+  if (quickGrid) {
+    quickGrid.innerHTML = templates.map(t => `
+      <div class="skill-card" style="padding:10px;cursor:pointer;" onclick="applyMcpTemplate('${escapeHtml(t.id)}', true)">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+          <strong style="font-size:12.5px;">${escapeHtml(t.title)}</strong>
+          <span class="skill-src">${escapeHtml(t.transport)}</span>
+        </div>
+        <span style="font-size:11.5px;color:var(--text-muted);">${escapeHtml(t.desc)}</span>
+      </div>`).join("");
+  }
+
+  const servers = mcp.servers || [];
+  const listBox = document.getElementById("mcpListBox");
+  if (listBox) {
+    if (!servers.length) {
+      listBox.innerHTML = `<div style="font-size:12px;color:var(--text-muted);padding:4px 2px;">尚未添加任何 MCP 工具，点下方常用模板即可 10 秒零 JSON 接入。</div>`;
+    } else {
+      listBox.innerHTML = servers.map(s => {
+        const endpoint = s.transport === "http" ? s.url : `${s.command} ${(s.args || []).join(" ")}`.trim();
+        const synced = (s.synced_clis || []).map(c => `<span class="skill-src" style="color:var(--c-dsh);">${escapeHtml(c.toUpperCase())}</span>`).join("");
+        return `
+          <div class="skill-card active">
+            <div class="skill-top">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                <strong style="font-size:13px;">${escapeHtml(s.title || s.name)}</strong>
+                <span class="skill-src">${escapeHtml(s.name)} · ${escapeHtml(s.transport)}</span>
+                ${synced || '<span class="skill-src">未同步 CLI</span>'}
+              </div>
+              <div style="display:flex;gap:5px;">
+                <button class="btn sm" onclick="editMcpServer('${escapeHtml(s.name)}')">编辑</button>
+                <button class="btn sm" onclick="syncMcpServer('${escapeHtml(s.name)}')">同步 CLI</button>
+                <button class="btn sm danger" onclick="deleteMcpServer('${escapeHtml(s.name)}')">删除</button>
+              </div>
+            </div>
+            ${s.desc ? `<div style="font-size:12px;color:var(--text-sec);">${escapeHtml(s.desc)}</div>` : ""}
+            <div style="font-size:11px;color:var(--text-muted);font-family:Consolas,monospace;word-break:break-all;">${escapeHtml(endpoint)}</div>
+          </div>`;
+      }).join("");
+    }
+  }
+
+  const scanBox = document.getElementById("mcpScanBox");
+  const lastScan = mcp.last_scan || {};
+  const scanKeys = Object.keys(lastScan);
+  if (scanBox) {
+    if (!scanKeys.length) {
+      scanBox.style.display = "none";
+    } else {
+      scanBox.style.display = "flex";
+      scanBox.innerHTML = `<div class="insp-card-title">本机 CLI 现有 MCP 列表</div>` + scanKeys.map(cid => {
+        const item = lastScan[cid] || {};
+        const lines = (item.lines || []).length ? item.lines.map(l => escapeHtml(l)).join("\n") : "(暂无已配置服务)";
+        return `<div style="font-size:11.5px;"><strong style="color:var(--text);">${escapeHtml(cid.toUpperCase())}</strong><pre style="margin:4px 0 0;padding:7px 9px;border-radius:7px;background:var(--bg-surface);border:1px solid var(--border);font-family:Consolas,monospace;font-size:11px;color:var(--text-sec);white-space:pre-wrap;max-height:110px;overflow:auto;">${lines}</pre></div>`;
+      }).join("");
+    }
+  }
+}
+
+function toggleMcpForm(force) {
+  const box = document.getElementById("mcpFormBox");
+  if (!box) return;
+  const show = typeof force === "boolean" ? force : box.style.display === "none";
+  box.style.display = show ? "flex" : "none";
+}
+
+function toggleMcpTransportFields() {
+  const t = document.getElementById("mcpTransport").value;
+  document.getElementById("mcpStdioFields").style.display = t === "stdio" ? "grid" : "none";
+  document.getElementById("mcpHttpFields").style.display = t === "http" ? "block" : "none";
+}
+
+function applyMcpTemplate(id, openForm = false) {
+  const tpl = (latestSnap?.mcp?.templates || []).find(t => t.id === id);
+  if (!tpl) return;
+  if (openForm) toggleMcpForm(true);
+  document.getElementById("mcpName").value = tpl.name || "";
+  document.getElementById("mcpTitle").value = tpl.title || "";
+  document.getElementById("mcpDesc").value = tpl.desc || "";
+  document.getElementById("mcpTransport").value = tpl.transport || "stdio";
+  toggleMcpTransportFields();
+  document.getElementById("mcpCmd").value = tpl.command || "";
+  document.getElementById("mcpArgs").value = (tpl.args || []).join(" ");
+  document.getElementById("mcpUrl").value = tpl.url || "";
+  document.getElementById("mcpEnv").value = (tpl.env_hints || []).map(k => `${k}=`).join("\n");
+  document.getElementById("mcpFormBox").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function editMcpServer(name) {
+  const srv = (latestSnap?.mcp?.servers || []).find(s => s.name === name);
+  if (!srv) return;
+  toggleMcpForm(true);
+  document.getElementById("mcpName").value = srv.name || "";
+  document.getElementById("mcpTitle").value = srv.title || "";
+  document.getElementById("mcpDesc").value = srv.desc || "";
+  document.getElementById("mcpTransport").value = srv.transport || "stdio";
+  toggleMcpTransportFields();
+  document.getElementById("mcpCmd").value = srv.command || "";
+  document.getElementById("mcpArgs").value = (srv.args || []).join(" ");
+  document.getElementById("mcpUrl").value = srv.url || "";
+  document.getElementById("mcpEnv").value = Object.entries(srv.env || {}).map(([k, v]) => `${k}=${v}`).join("\n");
+}
+
+async function submitMcpServer() {
+  const payload = {
+    action: "save",
+    name: document.getElementById("mcpName").value.trim(),
+    title: document.getElementById("mcpTitle").value.trim(),
+    desc: document.getElementById("mcpDesc").value.trim(),
+    transport: document.getElementById("mcpTransport").value,
+    command: document.getElementById("mcpCmd").value.trim(),
+    args: document.getElementById("mcpArgs").value.trim(),
+    url: document.getElementById("mcpUrl").value.trim(),
+    env: document.getElementById("mcpEnv").value,
+    auto_sync: document.getElementById("mcpAutoSync").checked
+  };
+  if (!payload.name) { showToast("请先填写工具英文标识"); return; }
+  try {
+    showToast(payload.auto_sync ? "正在保存并同步到本机 CLI…" : "正在保存 MCP 配置…");
+    const res = await api("/api/mcp", payload);
+    latestSnap = res.snapshot;
+    render(res.snapshot);
+    renderStudioModal();
+    toggleMcpForm(false);
+    const synced = res.sync?.synced || [];
+    showToast(synced.length ? `已保存并同步至：${synced.join(", ").toUpperCase()}` : "MCP 配置已保存");
+  } catch (e) { showToast(e.message); }
+}
+
+async function syncMcpServer(name) {
+  try {
+    showToast(`正在将 ${name} 同步到本机已装 CLI…`);
+    const res = await api("/api/mcp", { action: "sync", name });
+    latestSnap = res.snapshot;
+    render(res.snapshot);
+    renderStudioModal();
+    const synced = res.sync?.synced || [];
+    showToast(synced.length ? `已同步至：${synced.join(", ").toUpperCase()}` : "未检测到可同步的本地 CLI");
+  } catch (e) { showToast(e.message); }
+}
+
+async function deleteMcpServer(name) {
+  if (!confirm(`确定删除 MCP 工具「${name}」？（同时从本机已同步的 CLI 中移除）`)) return;
+  try {
+    const res = await api("/api/mcp", { action: "delete", name, unsync: true });
+    latestSnap = res.snapshot;
+    render(res.snapshot);
+    renderStudioModal();
+    showToast(`已移除 MCP：${name}`);
+  } catch (e) { showToast(e.message); }
+}
+
+async function scanCliMcps() {
+  try {
+    showToast("正在扫描本机 CLI 已配置的 MCP…");
+    const res = await api("/api/mcp", { action: "scan" });
+    latestSnap = res.snapshot;
+    render(res.snapshot);
+    renderStudioModal();
+    showToast("已刷新本机 CLI MCP 列表");
+  } catch (e) { showToast(e.message); }
+}
+
+// --- Toast ---
+function showToast(txt) {
+  const el = document.getElementById("toast");
+  el.textContent = txt;
+  el.style.display = "block";
+  clearTimeout(window._tt);
+  window._tt = setTimeout(() => { el.style.display = "none"; }, 3000);
+}
+
+// --- Mode Selector + @mention Auto-Routing ---
+function setMode(mode) {
+  currentMode = mode;
+  document.querySelectorAll(".mode-pill").forEach(p => p.classList.toggle("active", p.dataset.mode === mode));
+}
+const cmdInput = document.getElementById("cmdInput");
+cmdInput.addEventListener("input", () => {
+  cmdInput.style.height = "auto";
+  cmdInput.style.height = Math.min(180, cmdInput.scrollHeight) + "px";
+  const v = cmdInput.value;
+  if (/^@codex\s/i.test(v)) { setMode("codex"); cmdInput.value = v.replace(/^@codex\s/i, ""); }
+  else if (/^@agy\s/i.test(v)) { setMode("agy"); cmdInput.value = v.replace(/^@agy\s/i, ""); }
+  else if (/^@dsh\s/i.test(v)) { setMode("dsh"); cmdInput.value = v.replace(/^@dsh\s/i, ""); }
+  else if (/^@auto\s/i.test(v)) { setMode("pipeline"); cmdInput.value = v.replace(/^@auto\s/i, ""); }
+
+  const sm = cmdInput.value.match(/(?:^|\s)\/([a-zA-Z0-9_\-\u4e00-\u9fa5]*)$/);
+  if (sm) toggleSlashMenu(true, sm[1] || "");
+  else toggleSlashMenu(false);
+});
+cmdInput.addEventListener("keydown", e => {
+  if (e.key === "Escape") { toggleSlashMenu(false); togglePlusMenu(false); }
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+    e.preventDefault();
+    handlePrimarySend();
+  }
+});
+cmdInput.addEventListener("paste", e => {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  const files = [];
+  for (const it of items) {
+    if (it.kind === "file") {
+      const f = it.getAsFile();
+      if (f) files.push(f);
+    }
+  }
+  if (files.length) {
+    e.preventDefault();
+    handlePickedFiles(files);
+  }
+});
+const composerBox = document.getElementById("composerBox");
+if (composerBox) {
+  composerBox.addEventListener("dragover", e => { e.preventDefault(); composerBox.classList.add("drag-over"); });
+  composerBox.addEventListener("dragleave", () => composerBox.classList.remove("drag-over"));
+  composerBox.addEventListener("drop", e => {
+    e.preventDefault();
+    composerBox.classList.remove("drag-over");
+    if (e.dataTransfer?.files?.length) handlePickedFiles(e.dataTransfer.files);
+  });
+}
+
+// --- Ultra-Minimal Vertical Paper-Plane Animation ---
+function flyMiniPlane(fromId, toId) {
+  const y1 = RAIL_Y[fromId] ?? 30;
+  const y2 = RAIL_Y[toId] ?? 106;
+  const plane = document.getElementById("miniPlane");
+  const trail = document.getElementById("miniTrail");
+  const curveX = fromId === toId ? 6 : (y2 > y1 ? 37 : 9);
+  const midY = (y1 + y2) / 2;
+
+  trail.setAttribute("d", `M 23,${y1} Q ${curveX},${midY} 23,${y2}`);
+  trail.setAttribute("opacity", "0.75");
+  plane.setAttribute("opacity", "1");
+
+  if (railAnim) cancelAnimationFrame(railAnim);
+  const start = performance.now();
+  function step(now) {
+    const t = Math.min(1, (now - start) / 680);
+    const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    const x = (1 - e) * (1 - e) * 23 + 2 * (1 - e) * e * curveX + e * e * 23;
+    const y = (1 - e) * (1 - e) * y1 + 2 * (1 - e) * e * midY + e * e * y2;
+    const dx = 2 * (1 - e) * (curveX - 23) + 2 * e * (23 - curveX);
+    const dy = 2 * (1 - e) * (midY - y1) + 2 * e * (y2 - midY);
+    const ang = Math.atan2(dy, dx) * 180 / Math.PI;
+    plane.setAttribute("transform", `translate(${x.toFixed(1)}, ${y.toFixed(1)}) rotate(${ang.toFixed(1)})`);
+    if (t < 1) {
+      railAnim = requestAnimationFrame(step);
+    } else {
+      setTimeout(() => { plane.setAttribute("opacity", "0"); trail.setAttribute("opacity", "0"); }, 260);
+      const rip = document.getElementById("rrip-" + toId);
+      if (rip) { rip.classList.remove("go"); void rip.offsetWidth; rip.classList.add("go"); }
+    }
+  }
+  railAnim = requestAnimationFrame(step);
+}
+
+// --- Clean Markdown Renderer ---
+function escapeHtml(s) {
+  return String(s || "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+function renderMarkdown(md) {
+  const src = String(md || "");
+  const codeBlocks = [];
+  let text = src.replace(/```([\w-]*)\n([\s\S]*?)```/g, (_, lang, code) => {
+    const idx = codeBlocks.length;
+    codeBlocks.push({ lang: lang || "text", code: code.replace(/\n$/, "") });
+    return `@@CODEBLOCK_${idx}@@`;
+  });
+
+  const lines = text.split("\n");
+  let out = [];
+  let inUl = false;
+  let inOl = false;
+
+  function closeLists() {
+    if (inUl) { out.push("</ul>"); inUl = false; }
+    if (inOl) { out.push("</ol>"); inOl = false; }
+  }
+  function inlineFmt(s) {
+    let h = escapeHtml(s);
+    h = h.replace(/`([^`\n]+)`/g, '<code class="inline">$1</code>');
+    h = h.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    return h;
+  }
+
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    const cbMatch = line.trim().match(/^@@CODEBLOCK_(\d+)@@$/);
+    if (cbMatch) {
+      closeLists();
+      const cb = codeBlocks[Number(cbMatch[1])];
+      const safeId = `cb_${Math.random().toString(36).slice(2, 8)}`;
+      out.push(`<div class="code-block"><div class="code-head"><span>${escapeHtml(cb.lang)}</span><button class="copy-mini" onclick="copyCode('${safeId}')">复制</button></div><pre id="${safeId}">${escapeHtml(cb.code)}</pre></div>`);
+      continue;
+    }
+    if (!line.trim()) { closeLists(); continue; }
+    if (/^---+$/.test(line.trim())) { closeLists(); out.push('<hr style="border:none;border-top:1px solid var(--border);margin:12px 0;"/>'); continue; }
+    if (line.startsWith("### ")) { closeLists(); out.push(`<h3>${inlineFmt(line.slice(4))}</h3>`); continue; }
+    if (line.startsWith("## ")) { closeLists(); out.push(`<h2>${inlineFmt(line.slice(3))}</h2>`); continue; }
+    if (line.startsWith("# ")) { closeLists(); out.push(`<h1>${inlineFmt(line.slice(2))}</h1>`); continue; }
+    if (line.startsWith("> ")) { closeLists(); out.push(`<blockquote>${inlineFmt(line.slice(2))}</blockquote>`); continue; }
+    if (/^[-*]\s+/.test(line.trim())) {
+      if (inOl) { out.push("</ol>"); inOl = false; }
+      if (!inUl) { out.push("<ul>"); inUl = true; }
+      out.push(`<li>${inlineFmt(line.trim().replace(/^[-*]\s+/, ""))}</li>`);
+      continue;
+    }
+    if (/^\d+\.\s+/.test(line.trim())) {
+      if (inUl) { out.push("</ul>"); inUl = false; }
+      if (!inOl) { out.push("<ol>"); inOl = true; }
+      out.push(`<li>${inlineFmt(line.trim().replace(/^\d+\.\s+/, ""))}</li>`);
+      continue;
+    }
+    closeLists();
+    out.push(`<p>${inlineFmt(line)}</p>`);
+  }
+  closeLists();
+  return out.join("");
+}
+
+function copyCode(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  navigator.clipboard?.writeText(el.textContent || "");
+  showToast("已复制代码");
+}
+
+function wsSvgIcon(type) {
+  if (type === "godot-game") return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="10" y1="12" y2="12"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="15" x2="15.01" y1="13" y2="13"/><line x1="18" x2="18.01" y1="11" y2="11"/><rect width="20" height="12" x="2" y="6" rx="2"/></svg>`;
+  if (type === "web-app") return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>`;
+  if (type === "python") return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>`;
+  if (type === "docs") return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>`;
+  return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>`;
+}
+
+// --- Render Chat Stream (Strictly respects user scroll-up!) ---
+function renderChat(msgs, job) {
+  const scrollEl = document.getElementById("chatScroll");
+  const container = document.getElementById("chatStream");
+  const recent = (msgs || []).slice(-40);
+  const activeThread = latestSnap?.active_thread || {};
+  const isJobHere = !!job.running && (!job.thread_id || job.thread_id === activeThread.id);
+  const sig = JSON.stringify({
+    tid: activeThread.id || "",
+    sumLen: (activeThread.summary || "").length,
+    n: recent.length,
+    last: recent.length ? recent[recent.length - 1].id : "",
+    run: isJobHere,
+    ag: job.agent || "",
+    step: job.current_step_desc || "",
+    liveLen: isJobHere ? (job.live_reply || "").length : 0,
+    logsLen: isJobHere ? (job.logs || []).length : 0,
+    sec: isJobHere ? Math.floor(job.elapsed_seconds || 0) : 0
+  });
+  if (sig === lastChatSig) return;
+
+  const isFirst = !lastChatSig;
+  const prevTop = scrollEl.scrollTop;
+  const wasAtBottom = isFirst || (scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight) < 48;
+  lastChatSig = sig;
+  window._recentMsgs = recent;
+
+  if (!recent.length && !isJobHere) {
+    const wsName = latestSnap?.active_workspace?.name || "当前空间";
+    const isAigc = latestSnap?.active_workspace?.type === "aigc-studio";
+    const ex1 = isAigc
+      ? "帮我构思一个 60 秒赛博朋克漫剧第 1 集脚本，要有前 3 秒强钩子和 8 个分镜画面描述"
+      : "帮我梳理当前项目的架构目录，并给出接下来最值得优先优化的 3 个建议";
+    const ex2 = isAigc
+      ? "把当前分镜脚本整理成标准 JSON，并写一个 Python 音画对齐粗剪脚本框架"
+      : "检查当前空间代码是否有潜在报错，并直接修复后跑一次快速验证";
+    container.innerHTML = `
+      <div class="empty-state" style="max-width:620px;margin-top:8vh;">
+        <h3>欢迎进入「${escapeHtml(wsName)}」</h3>
+        <p style="margin-bottom:20px;">无需配置复杂参数，3 步即可开始多智能体协同</p>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:left;margin-bottom:18px;">
+          <div class="insp-card" style="padding:12px;">
+            <div style="font-size:11.5px;color:var(--text-muted);font-weight:600;">第 1 步</div>
+            <div style="font-size:13px;font-weight:600;color:var(--text);">先找「策划」聊想法</div>
+            <div style="font-size:12px;color:var(--text-sec);">直接提模糊需求，它会帮你梳理结构化方案。</div>
+          </div>
+          <div class="insp-card" style="padding:12px;">
+            <div style="font-size:11.5px;color:var(--text-muted);font-weight:600;">第 2 步</div>
+            <div style="font-size:13px;font-weight:600;color:var(--text);">一键交棒给「执行」</div>
+            <div style="font-size:12px;color:var(--text-sec);">满意后点回复气泡里的交棒按钮，后台自动改文件。</div>
+          </div>
+          <div class="insp-card" style="padding:12px;">
+            <div style="font-size:11.5px;color:var(--text-muted);font-weight:600;">第 3 步</div>
+            <div style="font-size:13px;font-weight:600;color:var(--text);">快速换模型 / 看日志</div>
+            <div style="font-size:12px;color:var(--text-sec);">左下角随时切换模型，右上角可展开终端与指南。</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+          <button class="btn" onclick="setMode('agy'); prefillInput('${ex1}')">试一试：让策划出方案</button>
+          <button class="btn" onclick="setMode('codex'); prefillInput('${ex2}')">试一试：让执行查项目</button>
+          <button class="btn" onclick="openGuideModal()">查看 30 秒使用指引</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  let html = recent.map((m, idx) => {
+    const sender = m.from || "xiu";
+    const ts = (m.ts || "").slice(11, 16);
+    if (sender === "xiu") {
+      const toInfo = ROLE_INFO[m.to] || { name: m.to };
+      const atts = m.attachments || [];
+      const attHtml = atts.length ? `<div class="msg-att-row">${atts.map(a => {
+        if (a.is_image) {
+          const url = `/api/image?path=${encodeURIComponent(a.path)}`;
+          return `<img class="msg-att-img" src="${url}" title="${escapeHtml(a.name)}" onclick="window.open('${url}','_blank')" />`;
+        }
+        return `<span class="msg-att-file">${escapeHtml(a.name)}</span>`;
+      }).join("")}</div>` : "";
+      return `
+        <div>
+          <div class="msg-user-wrap"><div class="msg-user">${escapeHtml(m.body)}</div></div>
+          ${attHtml}
+          <div class="msg-user-meta"><span>发给 ${escapeHtml(toInfo.name)}</span><span>·</span><span>${ts}</span></div>
+        </div>`;
+    }
+    const info = ROLE_INFO[sender] || { name: sender, role: "" };
+    let actions = "";
+    if (sender === "agy" && !job.running) {
+      actions = `
+        <div class="handoff-bar">
+          <button class="btn sm solid" onclick="approveAgyPlan(${idx})">采纳方案并交棒 Codex</button>
+          <button class="btn sm" onclick="prefillInput('针对上面的方案，我想微调：')">继续微调</button>
+        </div>`;
+    } else if (sender === "codex" && !job.running) {
+      actions = `
+        <div class="handoff-bar">
+          <button class="btn sm solid" onclick="launchGame()">启动试玩</button>
+          <button class="btn sm" onclick="runSelfCheck()">自检三条</button>
+          <button class="btn sm" onclick="submitVerdict('PASS')">验收通过</button>
+          <button class="btn sm danger" onclick="prefillInput('退回修改原因：')">退回修改</button>
+        </div>`;
+    }
+    return `
+      <div class="msg-agent">
+        <div class="agent-head">
+          <div class="agent-id">
+            <i class="agent-dot ${sender}"></i>
+            <span>${escapeHtml(info.name)}</span>
+            <span class="agent-role">${escapeHtml(info.role)}</span>
+          </div>
+          <span class="agent-time">${ts}</span>
+        </div>
+        <div class="agent-body">${renderMarkdown(m.body)}</div>
+        ${actions}
+      </div>`;
+  }).join("");
+
+  let memHtml = "";
+  if (activeThread.summary) {
+    memHtml = `
+      <details class="memory-banner">
+        <summary>
+          <span>已加载本对话压缩记忆（覆盖前 ${activeThread.compacted_count || 0} 条消息）</span>
+          <span style="color:var(--text-muted);font-size:11px;">查看摘要 ▾</span>
+        </summary>
+        <div class="memory-body">${renderMarkdown(activeThread.summary)}</div>
+      </details>`;
+  }
+
+  if (isJobHere) {
+    const ag = job.agent || "agy";
+    const info = ROLE_INFO[ag] || { name: ag.toUpperCase(), role: "" };
+    const step = job.current_step_desc || "正在思考与执行…";
+    const recentLogs = (job.logs || []).slice(-18).join("\n");
+    const traceOpen = window._traceOpen ? "open" : "";
+    html += `
+      <div class="msg-agent">
+        <div class="agent-head">
+          <div class="agent-id">
+            <i class="pulse-dot"></i>
+            <span>${escapeHtml(info.name)}</span>
+            <span class="agent-role">${escapeHtml(info.role)} · 运行中</span>
+          </div>
+          <span class="agent-time">${job.elapsed_seconds}s</span>
+        </div>
+        <details class="trace-box" ${traceOpen} ontoggle="window._traceOpen = this.open">
+          <summary>
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(step)}</span>
+            <span style="color:var(--text-muted);font-size:11px;flex-shrink:0;">执行步骤 ▾</span>
+          </summary>
+          <div class="trace-logs">${escapeHtml(recentLogs || "正在初始化进程…")}</div>
+        </details>
+        ${job.live_reply ? `<div class="agent-body">${renderMarkdown(job.live_reply)}</div>` : ""}
+      </div>`;
+  }
+
+  container.innerHTML = memHtml + html;
+  scrollEl.scrollTop = wasAtBottom ? scrollEl.scrollHeight : prevTop;
+}
+
+// --- Main Render (Protected against stale polls & DOM click-swallowing) ---
+let lastWsSig = "";
+let lastAppliedVersion = 0;
+let mutationInFlight = 0;
+
+function render(snap, fromMutation = false) {
+  if (!snap) return;
+  const ver = Number(snap.version || 0);
+  if (!fromMutation) {
+    if (mutationInFlight > 0) return;
+    if (ver > 0 && ver < lastAppliedVersion) return;
+  }
+  if (ver > lastAppliedVersion) lastAppliedVersion = ver;
+
+  latestSnap = snap;
+  const st = snap.state || {};
+  const wsData = snap.workspaces || {};
+  const activeWs = snap.active_workspace || {};
+  const wsThreads = snap.threads || [];
+  const activeThread = snap.active_thread || {};
+  const isGame = activeWs.type === "godot-game";
+  const job = snap.live_job || {};
+  const items = wsData.items || [];
+
+  // Sidebar Workspaces + Nested Threads under Active Workspace (DOM diff-guarded!)
+  const wsSig = JSON.stringify({
+    a: activeWs.id,
+    t: activeThread.id,
+    th: wsThreads.map(t => [t.id, t.title]),
+    i: items.map(w => [w.id, w.name, w.path, w.type])
+  });
+  if (wsSig !== lastWsSig) {
+    lastWsSig = wsSig;
+    document.getElementById("wsList").innerHTML = items.map(w => {
+      const isCur = w.id === activeWs.id;
+      const threadTreeHtml = isCur ? `
+        <div class="thread-tree">
+          ${wsThreads.map(t => `
+            <div class="thread-item ${t.id === activeThread.id ? 'active' : ''}" data-thread-id="${escapeHtml(t.id)}" onclick="switchThread('${escapeHtml(t.id)}')">
+              <span class="thread-title">${escapeHtml(t.title || '新对话')}</span>
+              <div class="thread-acts" onclick="event.stopPropagation()">
+                <button class="ws-act-btn" style="width:20px;height:20px;" title="重命名对话" onclick="renameThreadPrompt('${escapeHtml(t.id)}')">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                </button>
+                ${wsThreads.length > 1 ? `
+                <button class="ws-act-btn del" style="width:20px;height:20px;" title="删除对话" onclick="deleteThreadConfirm('${escapeHtml(t.id)}')">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg>
+                </button>` : ""}
+              </div>
+            </div>`).join("")}
+          <button class="thread-new-btn" onclick="createNewThread()">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            <span>新对话</span>
+          </button>
+        </div>` : "";
+
+      return `
+        <div>
+          <div class="ws-item ${isCur ? 'active' : ''}" data-ws-id="${escapeHtml(w.id)}" onclick="switchWorkspace('${escapeHtml(w.id)}')">
+            <span class="ws-icon">${wsSvgIcon(w.type)}</span>
+            <div class="ws-meta">
+              <div class="ws-name">${escapeHtml(w.name)}</div>
+              <div class="ws-path">${escapeHtml(w.path)}</div>
+            </div>
+            <div class="ws-actions" onclick="event.stopPropagation()">
+              <button class="ws-act-btn" title="重命名 / 编辑路径" onclick="openRenameModal('${escapeHtml(w.id)}')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+              </button>
+              ${items.length > 1 ? `
+              <button class="ws-act-btn del" title="从工作台移除空间" onclick="openDelModal('${escapeHtml(w.id)}')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+              </button>` : ""}
+            </div>
+          </div>
+          ${threadTreeHtml}
+        </div>`;
+    }).join("");
+  }
+  const tCrumb = document.getElementById("threadCrumb");
+  if (tCrumb) tCrumb.textContent = activeThread.title || "主对话";
+
+  // Dynamic Role Slots & Engine Badges
+  const roles = snap.roles || {};
+  const engines = snap.engines || [];
+  const engMap = Object.fromEntries(engines.map(e => [e.id, e]));
+  const isAigc = activeWs.type === "aigc-studio";
+
+  const slotToNode = { planner: "agy", builder: "codex", reviewer: "dsh" };
+  const summaryParts = [];
+  ["planner", "builder", "reviewer"].forEach(slotId => {
+    const r = roles[slotId] || {};
+    const eng = engMap[r.engine] || { short: (r.engine || "?").slice(0, 3).toUpperCase(), name: r.engine || "未绑定", ready: false };
+    const dot = document.getElementById("dot-" + slotId);
+    if (dot) dot.className = "s-dot " + (eng.ready ? "on" : "off");
+
+    const nodeId = slotToNode[slotId];
+    const roleShort = isAigc
+      ? (slotId === "planner" ? "编剧" : slotId === "builder" ? "制片" : "审片")
+      : (slotId === "planner" ? "策划" : slotId === "builder" ? "执行" : "质检");
+
+    const pLbl = document.getElementById("pill-label-" + nodeId);
+    if (pLbl) pLbl.textContent = `${roleShort} · ${eng.short}`;
+
+    const rTxt = document.getElementById("rtxt-" + nodeId);
+    if (rTxt) rTxt.textContent = eng.short;
+    const rTitle = document.getElementById("rtitle-" + nodeId);
+    if (rTitle) rTitle.textContent = `${roleShort} · ${eng.name}${r.model ? ' (' + r.model + ')' : ''}`;
+
+    ROLE_INFO[nodeId] = {
+      name: eng.name,
+      role: `${isAigc ? (r.aigc_label || roleShort) : (r.label || roleShort)}${r.model ? ' · ' + r.model : ''}`
+    };
+    summaryParts.push(`${eng.short}`);
+  });
+
+  // Populate Quick Model Switcher Popover (1-click fast switching!)
+  const pRole = roles.planner || {};
+  const bRole = roles.builder || {};
+  const pEng = engMap[pRole.engine] || {};
+  const bEng = engMap[bRole.engine] || {};
+  const qPLbl = document.getElementById("quickPlannerLabel");
+  const qBLbl = document.getElementById("quickBuilderLabel");
+  if (qPLbl) qPLbl.textContent = `策划模型 (${pEng.name || pRole.engine || 'AGY'})`;
+  if (qBLbl) qBLbl.textContent = `执行模型 (${bEng.name || bRole.engine || 'Codex'})`;
+
+  const fillQuickSelect = (selId, eng, curVal) => {
+    const sel = document.getElementById(selId);
+    if (!sel || document.activeElement === sel) return;
+    const list = (eng.models && eng.models.length) ? eng.models : (curVal ? [{ id: curVal, label: curVal }] : []);
+    const hasCur = list.some(m => m.id === curVal);
+    sel.innerHTML =
+      (!hasCur && curVal ? `<option value="${escapeHtml(curVal)}" selected>${escapeHtml(curVal)}</option>` : "") +
+      list.map(m => `<option value="${escapeHtml(m.id)}" ${m.id === curVal ? 'selected' : ''}>${escapeHtml(m.label || m.id)}</option>`).join("");
+  };
+  fillQuickSelect("quickPlannerModel", pEng, pRole.model || pEng.default_model || "");
+  fillQuickSelect("quickBuilderModel", bEng, bRole.model || bEng.default_model || "");
+
+  const qEffField = document.getElementById("quickEffortField");
+  const qEffSel = document.getElementById("quickBuilderEffort");
+  if (qEffField) qEffField.style.display = bEng.supports_effort ? "block" : "none";
+  if (qEffSel && document.activeElement !== qEffSel) qEffSel.value = bRole.effort || "high";
+
+  const shortP = (pRole.model || pEng.short || "").replace(/^gemini-/, "G").replace(/^claude-/, "C-");
+  const shortB = bRole.model || bEng.short || "";
+  document.getElementById("engineSummary").textContent = `${shortP} · ${shortB}`;
+
+  // Update Skills badges (Sidebar Settings + Composer chip)
+  const skillsList = snap.skills || [];
+  const activeSkillsCount = skillsList.filter(s => s.active).length;
+  const sbBadge = document.getElementById("sbSkillBadge");
+  if (sbBadge) sbBadge.textContent = activeSkillsCount > 0 ? `${activeSkillsCount} 技能生效` : `${skillsList.length} 技能`;
+  const chipTxt = document.getElementById("activeSkillChipText");
+  if (chipTxt) chipTxt.textContent = activeSkillsCount > 0 ? `技能 (${activeSkillsCount})` : "技能";
+
+  // Header
+  document.getElementById("wsTitle").textContent = activeWs.name || "Workspace";
+  document.getElementById("wsSub").textContent = isGame ? `R${st.current_round ?? '—'} · 最新可玩 R${st.latest_playable_round ?? '—'}` : (activeWs.type || "general");
+  document.getElementById("btnLaunchText").textContent = isGame ? "启动试玩" : "打开目录";
+
+  const pill = document.getElementById("statusPill");
+  const btnSend = document.getElementById("btnSend");
+  const btnInsp = document.getElementById("btnInspector");
+  if (job.running) {
+    pill.className = "status-pill running";
+    pill.innerHTML = `<i class="pulse-dot"></i><span>${escapeHtml((job.agent || "").toUpperCase())} · ${job.elapsed_seconds}s</span>`;
+    btnSend.className = "send-btn stop";
+    btnSend.title = "中止当前任务";
+    btnSend.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>`;
+    document.getElementById("composerHint").textContent = "运行中 · 点击红钮可随时中止";
+    btnInsp.classList.add("has-notif");
+  } else {
+    pill.className = "status-pill";
+    pill.textContent = "就绪";
+    btnSend.className = "send-btn";
+    btnSend.title = "发送 (Ctrl+Enter)";
+    btnSend.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>`;
+    document.getElementById("composerHint").textContent = "Ctrl+Enter 发送";
+    btnInsp.classList.remove("has-notif");
+  }
+
+  // Disputed Banner
+  const disp = document.getElementById("disputedBanner");
+  if (st.objection_active && snap.objection?.summary) {
+    disp.classList.add("show");
+    document.getElementById("disputedSummary").textContent = snap.objection.summary;
+  } else {
+    disp.classList.remove("show");
+  }
+
+  // Minimalist Inline Pipeline Approval Bar
+  const apprBar = document.getElementById("approvalBar");
+  const pend = job.pending_approval;
+  if (apprBar) {
+    const showAppr = !job.running && pend && pend.workspace_id === activeWs.id && (!pend.thread_id || pend.thread_id === activeThread.id);
+    apprBar.classList.toggle("show", Boolean(showAppr));
+  }
+
+  // Mini Relay Rail Nodes
+  ["xiu", "agy", "codex", "dsh"].forEach(id => {
+    const node = document.getElementById("rnode-" + id);
+    if (!node) return;
+    const isRun = !!job.running && job.agent === id;
+    node.classList.toggle("is-running", isRun);
+    node.classList.toggle("is-lock", !isRun && st.edit_lock === id);
+  });
+
+  // Messages + Mini Paper Plane Trigger
+  const msgs = snap.messages || [];
+  if (msgs.length) {
+    const newest = msgs[msgs.length - 1];
+    if (lastMsgId && newest.id !== lastMsgId) flyMiniPlane(newest.from, newest.to);
+    lastMsgId = newest.id;
+  }
+  renderChat(msgs, job);
+
+  // Inspector: Console (smart scroll lock)
+  const cBox = document.getElementById("consoleBox");
+  if (job.logs && job.logs.length) {
+    const cTop = cBox.scrollTop;
+    const cAtBot = (cBox.scrollHeight - cBox.scrollTop - cBox.clientHeight) < 40;
+    const txt = job.logs.join("\n");
+    if (cBox.textContent !== txt) {
+      cBox.textContent = txt;
+      cBox.scrollTop = cAtBot ? cBox.scrollHeight : cTop;
+    }
+  }
+
+  // Inspector: Gates & Files
+  const tel = snap.telemetry || {};
+  const age = tel.last_age_seconds ?? 99999;
+  document.getElementById("liveDiskAge").textContent = age < 60 ? `${age}s 前更新` : (age < 3600 ? `${Math.floor(age/60)}m 前更新` : "");
+
+  const rms = snap.rounds_metrics || [];
+  const measured = rms.filter(x => x.fps != null || x.report_exists);
+  const latestM = measured.length ? measured[measured.length - 1] : {};
+  document.getElementById("gatesCard").style.display = isGame ? "flex" : "none";
+  if (isGame) {
+    const scOk = snap.self_check?.status === "PASS" || snap.self_check?.status === "PASSED_BASELINE";
+    const fpsOk = (latestM.fps ?? 0) >= 60;
+    const latOk = (latestM.input_latency_ms ?? 999) < 100;
+    const ac = snap.asset_contract || {};
+    const rows = [
+      [`R${latestM.round ?? '—'} 桌面帧率`, latestM.fps != null ? `${latestM.fps} FPS` : "未测", fpsOk],
+      ["输入响应延迟", latestM.input_latency_ms != null ? `${latestM.input_latency_ms} ms` : "未测", latOk],
+      ["提交前自检三条", scOk ? "通过" : "待检", scOk],
+      ["资产契约", ac.status || "待检", ac.status === "PASS"]
+    ];
+    document.getElementById("gatesList").innerHTML = rows.map(([k, v, ok]) =>
+      `<div class="gate-row"><span style="color:var(--text-sec)">${k}</span><span style="display:inline-flex;align-items:center;gap:6px;font-family:Consolas,monospace;font-size:12px;">${v}<i class="s-dot ${ok ? 'on' : ''}"></i></span></div>`
+    ).join("");
+  }
+
+  document.getElementById("milestonesCard").style.display = ((isGame || isAigc) && (tel.milestones || []).length) ? "flex" : "none";
+  const msTitle = document.getElementById("milestonesTitle");
+  if (msTitle) msTitle.textContent = isAigc ? "AIGC 五阶段制片进度" : "本轮进度里程碑";
+  document.getElementById("milestonesRow").innerHTML = (tel.milestones || []).map(m =>
+    `<span class="ms-chip ${m.done ? 'done' : ''}">${m.done ? '✓ ' : ''}${escapeHtml(m.label)}</span>`
+  ).join("");
+
+  // Inspector: Git Changed Files
+  const git = snap.git || {};
+  const gitCard = document.getElementById("gitCard");
+  if (git.is_repo && (git.files || []).length) {
+    gitCard.style.display = "flex";
+    document.getElementById("gitBranchTag").textContent = git.branch ? `分支: ${git.branch}` : "";
+    document.getElementById("gitFilesBox").innerHTML = git.files.slice(0, 14).map(g => {
+      const code = (g.status || "M")[0];
+      const badgeCls = code === "?" ? "U" : code;
+      return `<div class="file-item clickable" onclick="inspectFileDiff('${escapeHtml(g.file)}')"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(g.file)}</span><span class="diff-badge ${badgeCls}">${escapeHtml(g.status)}</span></div>`;
+    }).join("");
+  } else {
+    gitCard.style.display = "none";
+  }
+
+  document.getElementById("recentFilesBox").innerHTML = (tel.recent_files || []).slice(0, 10).map(f =>
+    `<div class="file-item clickable" onclick="inspectFileDiff('${escapeHtml(f.file)}')"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(f.file)}</span><span style="color:var(--text-muted);flex-shrink:0;">${f.mtime_str}</span></div>`
+  ).join("") || `<div style="font-size:12px;color:var(--text-muted);">暂无最近修改文件</div>`;
+
+  // Inspector: AIGC Screening Room (Video + Audio + Storyboard Gallery)
+  const aigc = snap.aigc || {};
+  const hasAigcMedia = isAigc && ((aigc.videos || []).length || (aigc.audios || []).length || (aigc.images || []).length);
+  const aigcCard = document.getElementById("aigcScreeningCard");
+  if (aigcCard) {
+    aigcCard.style.display = isAigc ? "flex" : "none";
+    if (isAigc) {
+      const aigcSig = JSON.stringify([aigc.videos, aigc.audios, aigc.images]);
+      if (window._lastAigcSig !== aigcSig) {
+        window._lastAigcSig = aigcSig;
+        document.getElementById("aigcVideosBox").innerHTML = (aigc.videos || []).map(v => `
+          <div>
+            <video class="aigc-video" controls preload="metadata" src="/api/media?path=${encodeURIComponent(v.path)}"></video>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">${escapeHtml(v.rel)}</div>
+          </div>`).join("");
+        document.getElementById("aigcAudiosBox").innerHTML = (aigc.audios || []).map(a => `
+          <div>
+            <div style="font-size:11px;color:var(--text-sec);margin-bottom:2px;">${escapeHtml(a.rel)}</div>
+            <audio class="aigc-audio" controls preload="metadata" src="/api/media?path=${encodeURIComponent(a.path)}"></audio>
+          </div>`).join("");
+        document.getElementById("aigcImagesBox").innerHTML = (aigc.images || []).map(im => {
+          const url = `/api/image?path=${encodeURIComponent(im.path)}`;
+          return `<div class="aigc-shot" onclick="window.open('${url}','_blank')" title="${escapeHtml(im.rel)}"><img src="${url}"/><div class="aigc-shot-cap">${escapeHtml(im.name)}</div></div>`;
+        }).join("") || (!hasAigcMedia ? `<div style="grid-column:span 2;font-size:12px;color:var(--text-muted);padding:8px 0;">把分镜图、配音或成片放入 02_storyboard / 03_assets / 05_output，这里会自动显示画廊与审片播放器。</div>` : "");
+      }
+    }
+  }
+
+  // Inspector: Artifacts
+  document.getElementById("codexPreview").textContent = snap.next_for_codex || "暂无施工单";
+  const shots = [];
+  const withShots = rms.filter(x => x.screenshot);
+  if (withShots.length) {
+    const c = withShots[withShots.length - 1];
+    shots.push(`<div><img class="preview-img" src="/api/image?path=${encodeURIComponent(c.screenshot)}"/><div style="font-size:11px;color:var(--text-muted);margin-top:4px;">R${c.round} 实机 (${c.fps} FPS)</div></div>`);
+  }
+  if (isGame && snap.stage_concept_path) {
+    shots.push(`<div><img class="preview-img" src="/api/image?path=${encodeURIComponent(snap.stage_concept_path)}"/><div style="font-size:11px;color:var(--text-muted);margin-top:4px;">深空轨道舱原画</div></div>`);
+  }
+  document.getElementById("mediaCard").style.display = shots.length ? "flex" : "none";
+  document.getElementById("mediaGrid").innerHTML = shots.join("");
+}
+
+async function inspectFileDiff(relFile) {
+  const card = document.getElementById("diffViewerCard");
+  const title = document.getElementById("diffViewerTitle");
+  const body = document.getElementById("diffViewerBody");
+  card.style.display = "flex";
+  title.textContent = `加载中: ${relFile}`;
+  body.textContent = "正在读取文件 / Diff…";
+  try {
+    const res = await api(`/api/diff?file=${encodeURIComponent(relFile)}`);
+    title.textContent = `${res.mode === 'diff' ? 'Git Diff' : '源码预览'} · ${res.file || relFile}`;
+    if (res.mode === "diff") {
+      body.innerHTML = (res.content || "").split("\n").map(line => {
+        const esc = escapeHtml(line);
+        if (line.startsWith("+") && !line.startsWith("+++")) return `<span class="diff-add">${esc}</span>`;
+        if (line.startsWith("-") && !line.startsWith("---")) return `<span class="diff-del">${esc}</span>`;
+        if (line.startsWith("@@")) return `<span class="diff-hunk">${esc}</span>`;
+        return esc + "\n";
+      }).join("");
+    } else {
+      body.textContent = res.content || "(空文件)";
+    }
+    card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (e) {
+    body.textContent = e.message || "读取失败";
+  }
+}
+
+// --- API Actions (Non-overlapping polling + mutation priority) ---
+async function api(path, body = null) {
+  const isPost = body !== null;
+  if (isPost) mutationInFlight++;
+  try {
+    const res = await fetch(path, isPost ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "请求失败");
+    return data;
+  } finally {
+    if (isPost) mutationInFlight = Math.max(0, mutationInFlight - 1);
+  }
+}
+
+async function refreshAll() {
+  if (mutationInFlight > 0) return;
+  try {
+    const snap = await api("/api/state");
+    render(snap, false);
+  } catch (e) {}
+}
+
+async function handlePrimarySend() {
+  if (latestSnap?.live_job?.running) {
+    await abortJob();
+    return;
+  }
+  const instruction = cmdInput.value.trim();
+  if (!instruction && !pendingAttachments.length) return;
+  try {
+    const res = await api("/api/dispatch", {
+      target: currentMode,
+      instruction,
+      auto_run: true,
+      skill_ids: [...attachedSkillIds],
+      attachments: [...pendingAttachments]
+    });
+    cmdInput.value = "";
+    cmdInput.style.height = "auto";
+    attachedSkillIds = [];
+    pendingAttachments = [];
+    renderAttachedSkills();
+    toggleSlashMenu(false);
+    togglePlusMenu(false);
+    render(res.snapshot, true);
+    flyMiniPlane("xiu", currentMode === "pipeline" ? "agy" : currentMode);
+  } catch (e) { showToast(e.message); }
+}
+
+async function approveAgyPlan(idx) {
+  const m = (window._recentMsgs || [])[idx];
+  const instruction = m && m.body
+    ? `请按照刚才 AGY 制定的方案（以及 handoff/NEXT_FOR_CODEX.md）直接落地代码并完成验证：\n${m.body.slice(0, 1400)}`
+    : "请按照 handoff/NEXT_FOR_CODEX.md 落地代码并完成自检验证。";
+  try {
+    const res = await api("/api/dispatch", { target: "codex", instruction, auto_run: true });
+    render(res.snapshot);
+    flyMiniPlane("agy", "codex");
+    showToast("已交棒给 Codex 开始编码");
+  } catch (e) { showToast(e.message); }
+}
+
+function prefillInput(prefix) {
+  cmdInput.value = prefix;
+  cmdInput.focus();
+}
+
+async function abortJob() {
+  try {
+    const res = await api("/api/abort", {});
+    render(res.snapshot);
+    showToast("已中止当前运行任务");
+  } catch (e) { showToast(e.message); }
+}
+
+async function toggleApproveBeforeBuild(enabled) {
+  try {
+    const res = await api("/api/settings", { approve_before_build: Boolean(enabled) });
+    latestSnap = res.snapshot;
+    render(res.snapshot, true);
+    showToast(enabled ? "已开启：全自动执行前暂停审批" : "已关闭：全自动流水线直通执行");
+  } catch (e) { showToast(e.message); }
+}
+
+async function handleApproval(action) {
+  const note = action === "approve" ? cmdInput.value.trim() : "";
+  try {
+    const res = await api("/api/approve", { action, note });
+    if (action === "approve") {
+      cmdInput.value = "";
+      cmdInput.style.height = "auto";
+      flyMiniPlane("xiu", "codex");
+      showToast("已批准方案，交棒给核心执行");
+    } else {
+      showToast("已取消自动交棒，可继续与策划调整方案");
+    }
+    render(res.snapshot, true);
+  } catch (e) { showToast(e.message); }
+}
+
+async function saveModelConfig() {
+  try {
+    const res = await api("/api/models", {
+      agy_model: document.getElementById("selAgyModel").value,
+      codex_model: document.getElementById("selCodexModel").value,
+      codex_effort: document.getElementById("selCodexEffort").value
+    });
+    render(res.snapshot);
+    showToast("模型配置已更新");
+  } catch (e) { showToast(e.message); }
+}
+
+// --- Multi-Thread Conversations & Context Compaction ---
+async function createNewThread() {
+  try {
+    lastChatSig = "";
+    lastWsSig = "";
+    const res = await api("/api/thread", { action: "create", title: "新对话" });
+    render(res.snapshot, true);
+    cmdInput.focus();
+    showToast("已新建对话");
+  } catch (e) { showToast(e.message); }
+}
+
+async function switchThread(id) {
+  if (!id) return;
+  document.querySelectorAll(".thread-tree .thread-item").forEach(el => {
+    el.classList.toggle("active", el.dataset.threadId === id);
+  });
+  try {
+    lastChatSig = "";
+    lastWsSig = "";
+    const res = await api("/api/thread", { action: "switch", id });
+    render(res.snapshot, true);
+  } catch (e) { showToast(e.message); }
+}
+
+async function renameThreadPrompt(id) {
+  const cur = (latestSnap?.threads || []).find(t => t.id === id);
+  const next = prompt("重命名当前对话：", cur?.title || "");
+  if (!next || !next.trim()) return;
+  try {
+    lastWsSig = "";
+    const res = await api("/api/thread", { action: "rename", id, title: next.trim() });
+    render(res.snapshot, true);
+  } catch (e) { showToast(e.message); }
+}
+
+async function deleteThreadConfirm(id) {
+  if (!confirm("确定删除该对话及其聊天记录？（绝不会删除本地代码文件）")) return;
+  try {
+    lastChatSig = "";
+    lastWsSig = "";
+    const res = await api("/api/thread", { action: "delete", id });
+    render(res.snapshot, true);
+    showToast("已删除对话");
+  } catch (e) { showToast(e.message); }
+}
+
+async function compactCurrentThread() {
+  const msgs = latestSnap?.messages || [];
+  if (!msgs.length) { showToast("当前对话暂无消息，无需压缩"); return; }
+  if (!confirm(`确定压缩当前对话（共 ${msgs.length} 条消息）为长期记忆摘要？\n压缩后后续每轮都会自动携带这份记忆摘要，防止长对话遗忘早期决策。`)) return;
+  try {
+    const res = await api("/api/compact", {});
+    render(res.snapshot, true);
+    showToast("正在后台提炼会话长期记忆摘要…");
+  } catch (e) { showToast(e.message); }
+}
+
+// --- Workspace CRUD ---
+async function switchWorkspace(id) {
+  if (!id) return;
+  // Instant optimistic highlight so click feels 0ms snappy
+  document.querySelectorAll("#wsList .ws-item").forEach(el => {
+    el.classList.toggle("active", el.dataset.wsId === id);
+  });
+  try {
+    lastChatSig = "";
+    const res = await api("/api/workspace", { action: "switch", id });
+    lastWsSig = "";
+    render(res.snapshot, true);
+  } catch (e) { showToast(e.message); }
+}
+function openWsModal() {
+  editingWsId = null;
+  document.getElementById("wsModalTitle").textContent = "新建工作空间";
+  document.getElementById("wsModalSubmit").textContent = "创建空间";
+  document.getElementById("wsTypeField").style.display = "block";
+  document.getElementById("newWsName").value = "";
+  document.getElementById("newWsPath").value = "";
+  document.getElementById("wsModal").classList.add("show");
+  setTimeout(() => document.getElementById("newWsName").focus(), 40);
+}
+function openRenameModal(id) {
+  const ws = (latestSnap?.workspaces?.items || []).find(x => x.id === id);
+  if (!ws) return;
+  editingWsId = id;
+  document.getElementById("wsModalTitle").textContent = "编辑工作空间";
+  document.getElementById("wsModalSubmit").textContent = "保存修改";
+  document.getElementById("wsTypeField").style.display = "none";
+  document.getElementById("newWsName").value = ws.name || "";
+  document.getElementById("newWsPath").value = ws.path || "";
+  document.getElementById("wsModal").classList.add("show");
+}
+function closeWsModal() { document.getElementById("wsModal").classList.remove("show"); }
+
+async function submitWsModal() {
+  const name = document.getElementById("newWsName").value.trim();
+  const path = document.getElementById("newWsPath").value.trim();
+  const type = document.getElementById("newWsType").value;
+  if (!name || !path) { showToast("请填写名称与目录路径"); return; }
+  try {
+    const payload = editingWsId
+      ? { action: "rename", id: editingWsId, name, path }
+      : { action: "create", name, path, type };
+    const res = await api("/api/workspace", payload);
+    closeWsModal();
+    lastChatSig = "";
+    render(res.snapshot);
+    showToast(editingWsId ? "已更新空间信息" : `已创建空间：${name}`);
+  } catch (e) { showToast(e.message); }
+}
+
+function openDelModal(id) {
+  const ws = (latestSnap?.workspaces?.items || []).find(x => x.id === id);
+  if (!ws) return;
+  deletingWsId = id;
+  document.getElementById("delWsName").textContent = ws.name;
+  document.getElementById("delModal").classList.add("show");
+}
+function closeDelModal() { document.getElementById("delModal").classList.remove("show"); }
+async function confirmDeleteWorkspace() {
+  if (!deletingWsId) return;
+  const purge = document.getElementById("delPurgeMsgs").checked;
+  try {
+    const res = await api("/api/workspace", { action: "delete", id: deletingWsId, purge_messages: purge });
+    closeDelModal();
+    lastChatSig = "";
+    render(res.snapshot);
+    showToast("已从工作台移除该空间");
+  } catch (e) { showToast(e.message); }
+}
+
+async function clearCurrentChat() {
+  if (!confirm("确定清空当前空间的对话记录？（不会影响本地代码文件）")) return;
+  try {
+    const res = await api("/api/clear_chat", {});
+    lastChatSig = "";
+    render(res.snapshot);
+    showToast("已清空当前空间对话");
+  } catch (e) { showToast(e.message); }
+}
+
+async function submitVerdict(verdict) {
+  const notes = cmdInput.value.trim();
+  if (verdict === "REJECT" && !notes) { showToast("请先在输入框写一句退回原因"); return; }
+  try {
+    const res = await api("/api/verdict", { verdict, notes });
+    cmdInput.value = "";
+    render(res.snapshot);
+    flyMiniPlane("xiu", verdict === "PASS" ? "agy" : "codex");
+    showToast(verdict === "PASS" ? "本轮验收通过" : "已退回修改");
+  } catch (e) { showToast(e.message); }
+}
+
+async function runSelfCheck() {
+  try {
+    showToast("正在运行提交前自检三条…");
+    const res = await api("/api/self_check", {});
+    render(res.snapshot);
+    flyMiniPlane("codex", res.result.status === "PASS" ? "dsh" : "codex");
+    showToast(`自检三条：${res.result.status}`);
+  } catch (e) { showToast(e.message); }
+}
+async function runDshVerify() {
+  try {
+    const res = await api("/api/dsh_verify", {});
+    render(res.snapshot);
+    flyMiniPlane("dsh", res.result.overall_pass ? "agy" : "codex");
+    showToast(res.result.overall_pass ? "DSH 客观门禁全部通过" : "存在未达标项");
+  } catch (e) { showToast(e.message); }
+}
+async function openObjectionPrompt() {
+  const summary = prompt("异议摘要："); if (!summary) return;
+  const evidence = prompt("代码或实测依据：", "scripts/core/"); if (!evidence) return;
+  try {
+    const res = await api("/api/objection", { summary, evidence });
+    render(res.snapshot); flyMiniPlane("codex", "xiu");
+  } catch (e) { showToast(e.message); }
+}
+async function arbitrate(resolution) {
+  try {
+    const res = await api("/api/arbitrate", { resolution, note: "" });
+    render(res.snapshot); flyMiniPlane("xiu", "codex");
+  } catch (e) { showToast(e.message); }
+}
+async function launchGame() {
+  try { await api("/api/launch_game", {}); showToast("已执行打开操作"); }
+  catch (e) { showToast(e.message); }
+}
+
+async function pollLoop() {
+  await refreshAll();
+  setTimeout(pollLoop, 1500);
+}
+pollLoop();
+</script>
+</body>
+</html>

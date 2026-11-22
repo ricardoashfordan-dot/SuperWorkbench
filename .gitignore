@@ -1,0 +1,16 @@
+# Local runtime data & personal workspaces (never commit!)
+.workbench/
+*.log
+
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# OS & editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
