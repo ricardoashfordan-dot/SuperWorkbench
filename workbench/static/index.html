@@ -1437,6 +1437,11 @@
     <div class="settings-nav">
       <div class="settings-nav-title">Settings</div>
 
+      <button class="snav-item" id="snav-general" onclick="switchStudioTab('general')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span class="snav-title">通用偏好</span>
+      </button>
+
       <button class="snav-item active" id="snav-skills" onclick="switchStudioTab('skills')">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>
         <span class="snav-title">技能 Skills</span>
@@ -1472,6 +1477,33 @@
         <button class="icon-btn" onclick="closeStudioModal()">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>
+      </div>
+
+      <!-- Pane 0: General Preferences -->
+      <div class="settings-pane" id="pane-general" style="display:none;">
+        <div class="insp-card" style="gap:10px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+            <div style="min-width:0;">
+              <div style="font-size:13px;font-weight:550;color:var(--text);">自定义称呼</div>
+              <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">用于全新对话问候语、右侧纸飞机微轨与任务交接记录。</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+              <input id="inputUserName" maxlength="16" placeholder="例如：修 / Ricardo" onkeydown="if(event.key==='Enter') saveUserName(this.value)" style="width:140px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:12.5px;" />
+              <button class="btn sm solid" onclick="saveUserName(document.getElementById('inputUserName').value)">保存</button>
+            </div>
+          </div>
+          <div id="greetingPreview" style="font-size:12px;color:var(--text-sec);padding:7px 10px;border-radius:8px;background:var(--bg-elevated);border:1px solid var(--border);"></div>
+        </div>
+
+        <div class="insp-card" style="flex-direction:row;align-items:center;justify-content:space-between;gap:12px;">
+          <div style="min-width:0;">
+            <div style="font-size:13px;font-weight:550;color:var(--text);">自动流水线 · 执行前暂停审批</div>
+            <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">开启后，「全自动流转」会在策划输出方案后暂停，等你点一下批准再动手改文件。</div>
+          </div>
+          <label style="display:flex;align-items:center;cursor:pointer;flex-shrink:0;">
+            <input type="checkbox" id="toggleApproveGate" onchange="toggleApproveBeforeBuild(this.checked)" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" />
+          </label>
+        </div>
       </div>
 
       <!-- Pane 1: Skills (Fully Functional!) -->
@@ -1545,22 +1577,6 @@
           <button class="btn sm" onclick="autoRecommendRoles()">一键推荐配置</button>
         </div>
         <div id="roleSlotsContainer" style="display:flex;flex-direction:column;gap:10px;"></div>
-        <div class="insp-card" style="flex-direction:row;align-items:center;justify-content:space-between;gap:12px;">
-          <div style="min-width:0;">
-            <div style="font-size:12.5px;font-weight:550;color:var(--text);">我的称呼</div>
-            <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">显示在右侧微轨顶部与任务流转记录中，默认「我」。</div>
-          </div>
-          <input id="inputUserName" maxlength="16" placeholder="我 / Me" onchange="saveUserName(this.value)" style="width:120px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;padding:6px 9px;color:var(--text);font-size:12.5px;text-align:center;" />
-        </div>
-        <div class="insp-card" style="flex-direction:row;align-items:center;justify-content:space-between;gap:12px;">
-          <div style="min-width:0;">
-            <div style="font-size:12.5px;font-weight:550;color:var(--text);">自动流水线 · 执行前暂停审批</div>
-            <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">开启后，「全自动」模式在策划输出方案后暂停，等你点一下批准再动手改文件。</div>
-          </div>
-          <label style="display:flex;align-items:center;cursor:pointer;flex-shrink:0;">
-            <input type="checkbox" id="toggleApproveGate" onchange="toggleApproveBeforeBuild(this.checked)" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" />
-          </label>
-        </div>
         <div class="modal-foot">
           <button class="btn solid" onclick="saveRoleBindings()">保存角色配置</button>
         </div>
@@ -1844,6 +1860,7 @@ let currentSkillFilter = "all";
 let attachedSkillIds = [];
 
 const SETTINGS_META = {
+  general: ["通用偏好", "自定义称呼、问候语与工作流交互偏好"],
   skills: ["技能 Skills", "一处安装，所有本地 CLI 与纯 API 模型共享生效"],
   roles: ["角色与引擎绑定", "自由为策划 / 执行 / 质检三个岗位分配底层引擎"],
   engines: ["引擎与 API 库", "管理本机已检测 CLI，或接入免费本地 Ollama 与云端 API"],
@@ -1851,18 +1868,34 @@ const SETTINGS_META = {
   plugins: ["工作流插件 Plugins", "按工作空间隔离的行业抽屉面板、门禁与套装"]
 };
 
+function getTimePeriodLabel() {
+  const h = new Date().getHours();
+  if (h >= 5 && h < 12) return "早上好";
+  if (h >= 12 && h < 14) return "中午好";
+  if (h >= 14 && h < 18) return "下午好";
+  if (h >= 18 && h < 24) return "晚上好";
+  return "夜深了";
+}
+
+function getGreetingLine(userName) {
+  const period = getTimePeriodLabel();
+  const clean = String(userName || "").trim();
+  const hasCustom = clean && clean !== "我";
+  return hasCustom ? `${period}，${clean}，今天想从哪里开始？` : `${period}，今天想从哪里开始？`;
+}
+
 function openSettings(tab = "skills") {
   renderStudioModal();
   renderSkillsPane();
   switchStudioTab(tab);
   document.getElementById("studioModal").classList.add("show");
 }
-function openStudioModal() { openSettings("roles"); }
+function openStudioModal(tab = "roles") { openSettings(tab); }
 function closeStudioModal() {
   document.getElementById("studioModal").classList.remove("show");
 }
 function switchStudioTab(tab) {
-  ["skills", "roles", "engines", "mcp", "plugins"].forEach(k => {
+  ["general", "skills", "roles", "engines", "mcp", "plugins"].forEach(k => {
     document.getElementById("snav-" + k)?.classList.toggle("active", k === tab);
     const pane = document.getElementById("pane-" + k);
     if (pane) pane.style.display = k === tab ? "flex" : "none";
@@ -2217,7 +2250,10 @@ function renderStudioModal() {
   const gateToggle = document.getElementById("toggleApproveGate");
   if (gateToggle) gateToggle.checked = Boolean(latestSnap?.settings?.approve_before_build);
   const uNameEl = document.getElementById("inputUserName");
-  if (uNameEl && document.activeElement !== uNameEl) uNameEl.value = latestSnap?.settings?.user_name || "我";
+  const curUName = latestSnap?.settings?.user_name || "我";
+  if (uNameEl && document.activeElement !== uNameEl) uNameEl.value = curUName;
+  const gPrev = document.getElementById("greetingPreview");
+  if (gPrev) gPrev.textContent = `新对话问候预览：${getGreetingLine(curUName)}`;
 
   renderMcpPane();
 }
@@ -2680,8 +2716,11 @@ function renderChat(msgs, job) {
   const recent = (msgs || []).slice(-40);
   const activeThread = latestSnap?.active_thread || {};
   const isJobHere = !!job.running && (!job.thread_id || job.thread_id === activeThread.id);
+  const curUName = latestSnap?.settings?.user_name || "我";
   const sig = JSON.stringify({
     tid: activeThread.id || "",
+    uname: curUName,
+    period: getTimePeriodLabel(),
     sumLen: (activeThread.summary || "").length,
     n: recent.length,
     last: recent.length ? recent[recent.length - 1].id : "",
@@ -2743,9 +2782,11 @@ function renderChat(msgs, job) {
         ];
 
     window._starterPrompts = starters;
+    const greetingTitle = getGreetingLine(curUName);
     container.innerHTML = `
       <div class="empty-state" style="max-width:660px;margin-top:7vh;">
-        <h3 style="margin-bottom:10px;">${escapeHtml(wsName)}</h3>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">当前空间 · ${escapeHtml(wsName)}</div>
+        <h3 style="font-size:23px;font-weight:600;letter-spacing:-0.02em;margin-bottom:14px;">${escapeHtml(greetingTitle)}</h3>
         ${envHtml}
         <div class="starter-grid">
           ${starters.map((st, idx) => `
@@ -2756,6 +2797,8 @@ function renderChat(msgs, job) {
             </div>`).join("")}
         </div>
         <div class="onboard-links">
+          <button class="onboard-link" onclick="openStudioModal('general')">通用偏好</button>
+          <span>·</span>
           <button class="onboard-link" onclick="openStudioModal('roles')">角色与引擎</button>
           <span>·</span>
           <button class="onboard-link" onclick="openStudioModal('skills')">技能 Skills</button>
@@ -3299,9 +3342,11 @@ function applyStarter(idx) {
 async function saveUserName(val) {
   const clean = String(val || "").trim().slice(0, 16) || "我";
   try {
+    lastChatSig = "";
     const res = await api("/api/settings", { user_name: clean });
     latestSnap = res.snapshot;
     render(res.snapshot, true);
+    renderStudioModal();
     showToast(`称呼已更新为「${clean}」`);
   } catch (e) { showToast(e.message); }
 }
