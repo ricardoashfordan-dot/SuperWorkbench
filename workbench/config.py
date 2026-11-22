@@ -113,12 +113,15 @@ def load_app_settings() -> dict:
     ensure_data_dir()
     defaults = {
         "approve_before_build": False,
+        "user_name": "我",
     }
     raw = read_json(SETTINGS_PATH, {})
     if not isinstance(raw, dict):
         return defaults
+    uname = str(raw.get("user_name", "") or "").strip()[:16] or "我"
     return {
         "approve_before_build": bool(raw.get("approve_before_build", False)),
+        "user_name": uname,
     }
 
 
@@ -126,5 +129,8 @@ def save_app_settings(patch: dict) -> dict:
     cur = load_app_settings()
     if "approve_before_build" in patch:
         cur["approve_before_build"] = bool(patch["approve_before_build"])
+    if "user_name" in patch:
+        uname = str(patch.get("user_name") or "").strip()[:16]
+        cur["user_name"] = uname or "我"
     write_json(SETTINGS_PATH, cur)
     return cur

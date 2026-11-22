@@ -701,7 +701,8 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             state["edit_lock"] = "agy" if target == "pipeline" else target
             state["updated_at"] = config.now_iso()
             config.write_json(config.STATE_PATH, state)
-            msg = append_message("xiu", state["edit_lock"], "TASK", f"修下达任务 → {target.upper()}", text, round_num=r)
+            uname = config.load_app_settings().get("user_name", "我")
+            msg = append_message("xiu", state["edit_lock"], "TASK", f"{uname}下达任务 → {target.upper()}", text, round_num=r)
             self._send_json({"ok": True, "message": msg, "snapshot": build_snapshot()})
             return
 

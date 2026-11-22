@@ -639,7 +639,8 @@ class JobManager:
         try:
             if not pipeline:
                 node_id = SLOT_TO_NODE.get(slot, "agy")
-                emit("lock", node_id, f"修 → {slot.upper()}", instruction, "xiu", node_id, att_list=attachments)
+                uname = config.load_app_settings().get("user_name", "我")
+                emit("lock", node_id, f"{uname} → {slot.upper()}", instruction, "xiu", node_id, att_list=attachments)
                 sys_p, user_p, img_paths = self._build_prompts(slot, instruction, workspace, skill_ids, thread_id, attachments)
                 rc, full_reply = self._run_slot_blocking(slot, user_p, sys_p, ws_path, image_paths=img_paths)
                 with self.lock:

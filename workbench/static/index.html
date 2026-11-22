@@ -489,6 +489,70 @@
     gap: 6px;
   }
 
+  /* Minimalist First-Run Onboarding Canvas */
+  .onboard-env {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-surface);
+    font-size: 11.5px;
+    color: var(--text-sec);
+    margin-bottom: 20px;
+  }
+  .env-pill { display: inline-flex; align-items: center; gap: 5px; }
+  .env-sep { color: var(--border-strong); }
+  .starter-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    text-align: left;
+    margin-bottom: 18px;
+  }
+  .starter-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 13px 14px;
+    cursor: pointer;
+    transition: border-color 0.14s, background 0.14s, transform 0.14s;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .starter-card:hover {
+    border-color: var(--border-strong);
+    background: var(--bg-hover);
+    transform: translateY(-1px);
+  }
+  .starter-tag { font-size: 11px; color: var(--text-muted); font-weight: 500; }
+  .starter-title { font-size: 13px; font-weight: 600; color: var(--text); }
+  .starter-desc { font-size: 12px; color: var(--text-sec); line-height: 1.5; }
+  .onboard-links {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .onboard-link {
+    background: none;
+    border: none;
+    color: var(--text-sec);
+    font-size: 12px;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 6px;
+    font-family: inherit;
+  }
+  .onboard-link:hover { color: var(--text); background: var(--bg-hover); }
+
   /* Floating Composer Dock (Muse + Codex Style) */
   .composer-dock {
     position: absolute;
@@ -1193,12 +1257,12 @@
           <path id="miniTrail" d="" fill="none" stroke="var(--text-sec)" stroke-width="1.4" opacity="0" />
 
           <g class="rail-node" id="rnode-xiu" transform="translate(23,30)" onclick="setMode('agy')">
-            <title>修 · 制作人 / 终审</title>
+            <title id="rtitle-xiu">我 · 发起人 / 终审</title>
             <circle class="rail-ripple" id="rrip-xiu" r="14" />
             <circle class="rail-pulse" r="16" />
             <circle class="rail-ring" r="13.5" />
             <circle cx="9.5" cy="-9.5" r="2.8" fill="var(--c-xiu)" />
-            <text y="3.5" text-anchor="middle" class="rail-label">修</text>
+            <text y="3.5" text-anchor="middle" class="rail-label" id="rtxt-xiu">我</text>
           </g>
 
           <g class="rail-node" id="rnode-agy" transform="translate(23,106)" onclick="setMode('agy')">
@@ -1483,6 +1547,13 @@
         <div id="roleSlotsContainer" style="display:flex;flex-direction:column;gap:10px;"></div>
         <div class="insp-card" style="flex-direction:row;align-items:center;justify-content:space-between;gap:12px;">
           <div style="min-width:0;">
+            <div style="font-size:12.5px;font-weight:550;color:var(--text);">我的称呼</div>
+            <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">显示在右侧微轨顶部与任务流转记录中，默认「我」。</div>
+          </div>
+          <input id="inputUserName" maxlength="16" placeholder="我 / Me" onchange="saveUserName(this.value)" style="width:120px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;padding:6px 9px;color:var(--text);font-size:12.5px;text-align:center;" />
+        </div>
+        <div class="insp-card" style="flex-direction:row;align-items:center;justify-content:space-between;gap:12px;">
+          <div style="min-width:0;">
             <div style="font-size:12.5px;font-weight:550;color:var(--text);">自动流水线 · 执行前暂停审批</div>
             <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">开启后，「全自动」模式在策划输出方案后暂停，等你点一下批准再动手改文件。</div>
           </div>
@@ -1687,7 +1758,7 @@
 <script>
 const RAIL_Y = { xiu: 30, agy: 106, codex: 182, dsh: 258 };
 const ROLE_INFO = {
-  xiu: { name: "修", role: "制作人" },
+  xiu: { name: "我", role: "发起人" },
   agy: { name: "Antigravity", role: "策划 · 审计" },
   codex: { name: "Codex", role: "核心主程" },
   dsh: { name: "DSH", role: "独立质检" }
@@ -2037,20 +2108,34 @@ function renderAttachedSkills() {
   bar.innerHTML = attHtml + skillHtml;
 }
 
-function autoRecommendRoles() {
+async function autoRecommendRoles(saveNow = false) {
   if (!latestSnap) return;
   const engines = latestSnap.engines || [];
-  const readyIds = new Set(engines.filter(e => e.ready).map(e => e.id));
-  const pick = (list) => list.find(id => readyIds.has(id)) || list[0];
+  const readyList = engines.filter(e => e.ready);
+  const readyIds = new Set(readyList.map(e => e.id));
+  const fallback = readyList[0]?.id || "agy";
+  const pick = (list) => list.find(id => readyIds.has(id)) || fallback;
   const engMap = Object.fromEntries(engines.map(e => [e.id, e]));
   const p = pick(["agy", "claude", "gemini", "codex"]);
   const b = pick(["codex", "claude", "agy", "gemini"]);
   const r = pick(["dsh", "agy", "codex", "claude", "gemini"]);
-  latestSnap.roles.planner = { ...(latestSnap.roles.planner || {}), engine: p, model: engMap[p]?.default_model || "" };
-  latestSnap.roles.builder = { ...(latestSnap.roles.builder || {}), engine: b, model: engMap[b]?.default_model || "", effort: "high" };
-  latestSnap.roles.reviewer = { ...(latestSnap.roles.reviewer || {}), engine: r, model: engMap[r]?.default_model || "" };
+  const nextRoles = {
+    planner: { ...(latestSnap.roles?.planner || {}), engine: p, model: engMap[p]?.default_model || "" },
+    builder: { ...(latestSnap.roles?.builder || {}), engine: b, model: engMap[b]?.default_model || "", effort: "high" },
+    reviewer: { ...(latestSnap.roles?.reviewer || {}), engine: r, model: engMap[r]?.default_model || "" }
+  };
+  if (saveNow) {
+    try {
+      lastChatSig = "";
+      const res = await api("/api/roles", { roles: nextRoles });
+      render(res.snapshot, true);
+      showToast("已按本机环境一键绑定最佳角色阵容");
+    } catch (e) { showToast(e.message); }
+    return;
+  }
+  latestSnap.roles = nextRoles;
   renderStudioModal();
-  showToast("已按本机环境自动匹配推荐阵容，点击「保存生效」即可");
+  showToast("已按本机环境自动匹配推荐阵容，点击「保存角色配置」生效");
 }
 
 function renderStudioModal() {
@@ -2131,6 +2216,8 @@ function renderStudioModal() {
 
   const gateToggle = document.getElementById("toggleApproveGate");
   if (gateToggle) gateToggle.checked = Boolean(latestSnap?.settings?.approve_before_build);
+  const uNameEl = document.getElementById("inputUserName");
+  if (uNameEl && document.activeElement !== uNameEl) uNameEl.value = latestSnap?.settings?.user_name || "我";
 
   renderMcpPane();
 }
@@ -2578,6 +2665,7 @@ function copyCode(id) {
 }
 
 function wsSvgIcon(type) {
+  if (type === "aigc-studio") return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M17 3v18"/><path d="M3 8h4"/><path d="M3 16h4"/><path d="M17 8h4"/><path d="M17 16h4"/></svg>`;
   if (type === "godot-game") return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="10" y1="12" y2="12"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="15" x2="15.01" y1="13" y2="13"/><line x1="18" x2="18.01" y1="11" y2="11"/><rect width="20" height="12" x="2" y="6" rx="2"/></svg>`;
   if (type === "web-app") return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>`;
   if (type === "python") return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>`;
@@ -2614,38 +2702,67 @@ function renderChat(msgs, job) {
 
   if (!recent.length && !isJobHere) {
     const wsName = latestSnap?.active_workspace?.name || "当前空间";
-    const isAigc = latestSnap?.active_workspace?.type === "aigc-studio";
-    const ex1 = isAigc
-      ? "帮我构思一个 60 秒赛博朋克漫剧第 1 集脚本，要有前 3 秒强钩子和 8 个分镜画面描述"
-      : "帮我梳理当前项目的架构目录，并给出接下来最值得优先优化的 3 个建议";
-    const ex2 = isAigc
-      ? "把当前分镜脚本整理成标准 JSON，并写一个 Python 音画对齐粗剪脚本框架"
-      : "检查当前空间代码是否有潜在报错，并直接修复后跑一次快速验证";
+    const wsType = latestSnap?.active_workspace?.type || "general";
+    const isAigc = wsType === "aigc-studio";
+    const isGame = wsType === "godot-game";
+    const engines = latestSnap?.engines || [];
+    const roles = latestSnap?.roles || {};
+    const readyEngines = engines.filter(e => e.ready);
+    const hasUnreadyRole = ["planner", "builder"].some(s => {
+      const eng = engines.find(e => e.id === roles[s]?.engine);
+      return !eng || !eng.ready;
+    });
+
+    const envHtml = readyEngines.length
+      ? `<div class="onboard-env">
+          ${readyEngines.slice(0, 4).map(e => `<span class="env-pill"><i class="s-dot on"></i><span>${escapeHtml(e.name)}</span></span>`).join('<span class="env-sep">·</span>')}
+          ${hasUnreadyRole ? `<span class="env-sep">|</span><button class="onboard-link" style="color:var(--c-agy);font-weight:550;" onclick="autoRecommendRoles(true)">一键匹配最佳角色</button>` : ""}
+        </div>`
+      : `<div class="onboard-env" style="border-color:rgba(245,158,11,0.35);">
+          <span class="env-pill"><i class="s-dot off" style="background:var(--c-warn);"></i><span>尚未检测到本地 CLI</span></span>
+          <span class="env-sep">·</span>
+          <button class="onboard-link" style="color:var(--c-warn);font-weight:550;" onclick="openStudioModal('engines')">10 秒接入 Ollama 或云端 API →</button>
+        </div>`;
+
+    const starters = isAigc
+      ? [
+          { mode: "agy", tag: "编剧 · 策划", title: "生成 60 秒漫剧脚本", desc: "输出强悬念钩子与 8 个连贯分镜画面描述", prompt: "帮我构思一个 60 秒赛博朋克漫剧第 1 集脚本，要求前 3 秒有强悬念钩子，并输出 Markdown 分镜表（镜号、景别、台词、生图提示词）。" },
+          { mode: "codex", tag: "制片 · 执行", title: "搭建资产与粗剪脚本", desc: "把分镜结构化为 JSON 并生成本地自动化脚本", prompt: "请帮我把当前空间的分镜规划整理成结构化 JSON 存入 02_storyboard/，并创建一个基础的 Python 音画合成脚本框架。" },
+          { mode: "pipeline", tag: "全自动流水线", title: "编剧 → 制片 → 审片", desc: "端到端自动出方案、落地文件并做合规审片", prompt: "请在本制片空间内规划一套短片分镜目录规范模板，自动创建示例脚本与分镜清单，并做一次一致性审查。" }
+        ]
+      : isGame
+      ? [
+          { mode: "agy", tag: "策划 · 架构", title: "梳理玩法与数值平衡", desc: "快速分析核心循环、手感指标与下轮优化点", prompt: "请梳理当前游戏项目的核心战斗循环与最新一轮的优化重点，给出按优先级排序的 3 个改进方案。" },
+          { mode: "codex", tag: "主程 · 执行", title: "排查报错并跑通自检", desc: "直接检查脚本警告、修复问题并执行无头验证", prompt: "检查当前游戏工程脚本中是否存在潜在报错或性能隐患，直接修复并运行一次无头快速验证。" },
+          { mode: "pipeline", tag: "全自动流水线", title: "策划 → 编码 → 门禁核验", desc: "自动出方案、写代码并跑完客观硬指标自检", prompt: "请设计并实现一个小幅手感反馈增强（如受击顿帧或音效层次优化），完成后自动跑通自检门禁并汇报结果。" }
+        ]
+      : [
+          { mode: "agy", tag: "策划 · 架构", title: "读懂当前项目架构", desc: "快速梳理目录结构、关键模块与 3 个高价值优化点", prompt: "帮我梳理当前工作空间的整体架构与核心文件职责，并给出接下来最值得优先优化的 3 个建议。" },
+          { mode: "codex", tag: "执行 · 主程", title: "代码体检与快速修复", desc: "排查潜在 Bug、性能隐患并直接落地修复验证", prompt: "请检查当前空间代码中是否存在潜在 Bug 或可改进之处，先简要列出发现，再直接完成安全修复并验证。" },
+          { mode: "pipeline", tag: "全自动流水线", title: "方案 → 落地 → 独立审查", desc: "一条指令串联三位智能体，完整闭环交付", prompt: "请先为当前项目构思一个实用且轻量的功能改进方案，再直接落地实现，最后做一次独立代码审查与风险总结。" }
+        ];
+
+    window._starterPrompts = starters;
     container.innerHTML = `
-      <div class="empty-state" style="max-width:620px;margin-top:8vh;">
-        <h3>欢迎进入「${escapeHtml(wsName)}」</h3>
-        <p style="margin-bottom:20px;">无需配置复杂参数，3 步即可开始多智能体协同</p>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:left;margin-bottom:18px;">
-          <div class="insp-card" style="padding:12px;">
-            <div style="font-size:11.5px;color:var(--text-muted);font-weight:600;">第 1 步</div>
-            <div style="font-size:13px;font-weight:600;color:var(--text);">先找「策划」聊想法</div>
-            <div style="font-size:12px;color:var(--text-sec);">直接提模糊需求，它会帮你梳理结构化方案。</div>
-          </div>
-          <div class="insp-card" style="padding:12px;">
-            <div style="font-size:11.5px;color:var(--text-muted);font-weight:600;">第 2 步</div>
-            <div style="font-size:13px;font-weight:600;color:var(--text);">一键交棒给「执行」</div>
-            <div style="font-size:12px;color:var(--text-sec);">满意后点回复气泡里的交棒按钮，后台自动改文件。</div>
-          </div>
-          <div class="insp-card" style="padding:12px;">
-            <div style="font-size:11.5px;color:var(--text-muted);font-weight:600;">第 3 步</div>
-            <div style="font-size:13px;font-weight:600;color:var(--text);">快速换模型 / 看日志</div>
-            <div style="font-size:12px;color:var(--text-sec);">左下角随时切换模型，右上角可展开终端与指南。</div>
-          </div>
+      <div class="empty-state" style="max-width:660px;margin-top:7vh;">
+        <h3 style="margin-bottom:10px;">${escapeHtml(wsName)}</h3>
+        ${envHtml}
+        <div class="starter-grid">
+          ${starters.map((st, idx) => `
+            <div class="starter-card" onclick="applyStarter(${idx})">
+              <div class="starter-tag">${escapeHtml(st.tag)}</div>
+              <div class="starter-title">${escapeHtml(st.title)}</div>
+              <div class="starter-desc">${escapeHtml(st.desc)}</div>
+            </div>`).join("")}
         </div>
-        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
-          <button class="btn" onclick="setMode('agy'); prefillInput('${ex1}')">试一试：让策划出方案</button>
-          <button class="btn" onclick="setMode('codex'); prefillInput('${ex2}')">试一试：让执行查项目</button>
-          <button class="btn" onclick="openGuideModal()">查看 30 秒使用指引</button>
+        <div class="onboard-links">
+          <button class="onboard-link" onclick="openStudioModal('roles')">角色与引擎</button>
+          <span>·</span>
+          <button class="onboard-link" onclick="openStudioModal('skills')">技能 Skills</button>
+          <span>·</span>
+          <button class="onboard-link" onclick="openStudioModal('mcp')">外部工具 MCP</button>
+          <span>·</span>
+          <button class="onboard-link" onclick="openGuideModal()">30 秒上手指南</button>
         </div>
       </div>`;
     return;
@@ -2826,6 +2943,15 @@ function render(snap, fromMutation = false) {
   }
   const tCrumb = document.getElementById("threadCrumb");
   if (tCrumb) tCrumb.textContent = activeThread.title || "主对话";
+
+  // Dynamic User Display Name (De-personalized, customizable in Settings)
+  const userName = (snap.settings?.user_name || "我").trim() || "我";
+  const userShort = /^[\x00-\x7F]+$/.test(userName) ? userName.slice(0, 3) : userName.slice(0, 2);
+  ROLE_INFO.xiu = { name: userName, role: "发起人" };
+  const rTxtXiu = document.getElementById("rtxt-xiu");
+  if (rTxtXiu) rTxtXiu.textContent = userShort;
+  const rTitleXiu = document.getElementById("rtitle-xiu");
+  if (rTitleXiu) rTitleXiu.textContent = `${userName} · 发起人 / 终审`;
 
   // Dynamic Role Slots & Engine Badges
   const roles = snap.roles || {};
@@ -3158,7 +3284,26 @@ async function approveAgyPlan(idx) {
 
 function prefillInput(prefix) {
   cmdInput.value = prefix;
+  cmdInput.style.height = "auto";
+  cmdInput.style.height = Math.min(180, cmdInput.scrollHeight) + "px";
   cmdInput.focus();
+}
+
+function applyStarter(idx) {
+  const st = (window._starterPrompts || [])[idx];
+  if (!st) return;
+  setMode(st.mode || "agy");
+  prefillInput(st.prompt || "");
+}
+
+async function saveUserName(val) {
+  const clean = String(val || "").trim().slice(0, 16) || "我";
+  try {
+    const res = await api("/api/settings", { user_name: clean });
+    latestSnap = res.snapshot;
+    render(res.snapshot, true);
+    showToast(`称呼已更新为「${clean}」`);
+  } catch (e) { showToast(e.message); }
 }
 
 async function abortJob() {
