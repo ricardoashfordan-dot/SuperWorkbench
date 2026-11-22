@@ -295,6 +295,13 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             self._send_json(build_snapshot())
             return
 
+        if parsed.path == "/api/live":
+            self._send_json({
+                "version": get_version(),
+                "live_job": runner.JOB_MANAGER.status_dict(),
+            })
+            return
+
         if parsed.path == "/api/diff":
             qs = urllib.parse.parse_qs(parsed.query)
             rel_file = (qs.get("file") or [""])[0]

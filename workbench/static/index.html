@@ -449,6 +449,56 @@
   }
   .copy-mini:hover { background: var(--bg-hover); color: var(--text); }
 
+  /* Markdown Tables, Links & Live Stream Cursor */
+  .md-table-wrap {
+    margin: 10px 0;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-surface);
+  }
+  .md-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .md-table th, .md-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+  }
+  .md-table th:last-child, .md-table td:last-child { border-right: none; }
+  .md-table tr:last-child td { border-bottom: none; }
+  .md-table thead th {
+    background: var(--bg-elevated);
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .md-table tbody tr:hover { background: var(--bg-hover); }
+  .md-link {
+    color: var(--c-agy);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-color: rgba(59,130,246,0.4);
+  }
+  .md-link:hover { text-decoration-color: var(--c-agy); }
+  .stream-cursor {
+    display: inline-block;
+    width: 7px;
+    height: 14px;
+    margin-left: 3px;
+    vertical-align: -2px;
+    border-radius: 2px;
+    background: var(--text-sec);
+    animation: cur-blink 0.9s steps(2, start) infinite;
+  }
+  @keyframes cur-blink { 0%, 49% { opacity: 0.85; } 50%, 100% { opacity: 0; } }
+
   /* Inline Collapsible Execution Trace (Codex/AGY style) */
   .trace-box {
     margin: 4px 0 8px 16px;
@@ -1068,7 +1118,7 @@
 
     <!-- Left Sidebar Settings Entry (Skills / MCP / Plugins / Engines) -->
     <div class="sb-settings-wrap">
-      <button class="sb-settings-btn" onclick="openSettings('skills')">
+      <button class="sb-settings-btn" onclick="openSettings('general')">
         <span style="display:flex;align-items:center;gap:9px;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           <span>Settings</span>
@@ -1481,18 +1531,26 @@
 
       <!-- Pane 0: General Preferences -->
       <div class="settings-pane" id="pane-general" style="display:none;">
-        <div class="insp-card" style="gap:10px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-            <div style="min-width:0;">
-              <div style="font-size:13px;font-weight:550;color:var(--text);">自定义称呼</div>
-              <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">用于全新对话问候语、右侧纸飞机微轨与任务交接记录。</div>
-            </div>
-            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-              <input id="inputUserName" maxlength="16" placeholder="例如：修 / Ricardo" onkeydown="if(event.key==='Enter') saveUserName(this.value)" style="width:140px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:12.5px;" />
-              <button class="btn sm solid" onclick="saveUserName(document.getElementById('inputUserName').value)">保存</button>
-            </div>
+        <div class="insp-card" style="flex-direction:row;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+          <div style="min-width:0;">
+            <div style="font-size:13px;font-weight:550;color:var(--text);">自定义称呼</div>
+            <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">用于全新对话问候语、右侧微轨与任务交接记录。</div>
           </div>
-          <div id="greetingPreview" style="font-size:12px;color:var(--text-sec);padding:7px 10px;border-radius:8px;background:var(--bg-elevated);border:1px solid var(--border);"></div>
+          <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+            <input id="inputUserName" maxlength="16" placeholder="例如：修 / Ricardo" onkeydown="if(event.key==='Enter') saveUserName(this.value)" style="width:140px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:12.5px;" />
+            <button class="btn sm solid" onclick="saveUserName(document.getElementById('inputUserName').value)">保存</button>
+          </div>
+        </div>
+
+        <div class="insp-card" style="flex-direction:row;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+          <div style="min-width:0;">
+            <div style="font-size:13px;font-weight:550;color:var(--text);">外观风格</div>
+            <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">在暗夜（Obsidian）与纸白（Muse）双主题间自由切换。</div>
+          </div>
+          <div style="display:flex;gap:5px;flex-shrink:0;">
+            <button class="btn sm" id="themeOptDark" onclick="applyTheme('dark')">暗夜深色</button>
+            <button class="btn sm" id="themeOptLight" onclick="applyTheme('light')">纸白浅色</button>
+          </div>
         </div>
 
         <div class="insp-card" style="flex-direction:row;align-items:center;justify-content:space-between;gap:12px;">
@@ -1794,9 +1852,13 @@ function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
   localStorage.setItem("sw_theme", theme);
   const btn = document.getElementById("btnTheme");
-  btn.innerHTML = theme === "dark"
-    ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>`
-    : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>`;
+  if (btn) {
+    btn.innerHTML = theme === "dark"
+      ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>`
+      : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>`;
+  }
+  document.getElementById("themeOptDark")?.classList.toggle("solid", theme === "dark");
+  document.getElementById("themeOptLight")?.classList.toggle("solid", theme === "light");
 }
 function toggleTheme() {
   const cur = document.documentElement.getAttribute("data-theme") || "dark";
@@ -1884,7 +1946,7 @@ function getGreetingLine(userName) {
   return hasCustom ? `${period}，${clean}，今天想从哪里开始？` : `${period}，今天想从哪里开始？`;
 }
 
-function openSettings(tab = "skills") {
+function openSettings(tab = "general") {
   renderStudioModal();
   renderSkillsPane();
   switchStudioTab(tab);
@@ -2252,8 +2314,9 @@ function renderStudioModal() {
   const uNameEl = document.getElementById("inputUserName");
   const curUName = latestSnap?.settings?.user_name || "我";
   if (uNameEl && document.activeElement !== uNameEl) uNameEl.value = curUName;
-  const gPrev = document.getElementById("greetingPreview");
-  if (gPrev) gPrev.textContent = `新对话问候预览：${getGreetingLine(curUName)}`;
+  const curTheme = document.documentElement.getAttribute("data-theme") || "dark";
+  document.getElementById("themeOptDark")?.classList.toggle("solid", curTheme === "dark");
+  document.getElementById("themeOptLight")?.classList.toggle("solid", curTheme === "light");
 
   renderMcpPane();
 }
@@ -2629,17 +2692,21 @@ function flyMiniPlane(fromId, toId) {
   railAnim = requestAnimationFrame(step);
 }
 
-// --- Clean Markdown Renderer ---
+// --- Clean Markdown Renderer (GFM Tables, Links, Code Blocks & Live Stream) ---
 function escapeHtml(s) {
   return String(s || "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 }
-function renderMarkdown(md) {
-  const src = String(md || "");
+function renderMarkdown(md, streaming = false) {
+  let src = String(md || "");
+  // Gracefully close an unfinished fenced code block while streaming
+  if (streaming && ((src.match(/```/g) || []).length % 2 === 1)) {
+    src += "\n```";
+  }
   const codeBlocks = [];
   let text = src.replace(/```([\w-]*)\n([\s\S]*?)```/g, (_, lang, code) => {
     const idx = codeBlocks.length;
     codeBlocks.push({ lang: lang || "text", code: code.replace(/\n$/, "") });
-    return `@@CODEBLOCK_${idx}@@`;
+    return `\n@@CODEBLOCK_${idx}@@\n`;
   });
 
   const lines = text.split("\n");
@@ -2652,14 +2719,36 @@ function renderMarkdown(md) {
     if (inOl) { out.push("</ol>"); inOl = false; }
   }
   function inlineFmt(s) {
-    let h = escapeHtml(s);
-    h = h.replace(/`([^`\n]+)`/g, '<code class="inline">$1</code>');
+    const tokens = [];
+    let raw = String(s || "").replace(/`([^`\n]+)`/g, (_, code) => {
+      const idx = tokens.length;
+      tokens.push(`<code class="inline">${escapeHtml(code)}</code>`);
+      return `@@INL_${idx}@@`;
+    });
+    let h = escapeHtml(raw);
+    h = h.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a class="md-link" href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    h = h.replace(/~~([^~]+)~~/g, '<del>$1</del>');
     h = h.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    h = h.replace(/(^|[^\w*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
+    h = h.replace(/@@INL_(\d+)@@/g, (_, i) => tokens[Number(i)] || "");
     return h;
   }
 
-  for (const raw of lines) {
-    const line = raw.trimEnd();
+  function splitTableRow(row) {
+    let r = row.trim();
+    if (r.startsWith("|")) r = r.slice(1);
+    if (r.endsWith("|")) r = r.slice(0, -1);
+    return r.split("|").map(c => c.trim());
+  }
+  function isTableSep(row) {
+    const t = row.trim();
+    if (!t.includes("-")) return false;
+    const cells = splitTableRow(t);
+    return cells.length >= 2 && cells.every(c => /^:?-{3,}:?$/.test(c));
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trimEnd();
     const cbMatch = line.trim().match(/^@@CODEBLOCK_(\d+)@@$/);
     if (cbMatch) {
       closeLists();
@@ -2669,6 +2758,28 @@ function renderMarkdown(md) {
       continue;
     }
     if (!line.trim()) { closeLists(); continue; }
+
+    // GFM Table detection: header line + alignment separator line
+    if (line.includes("|") && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+      closeLists();
+      const headers = splitTableRow(line);
+      const aligns = splitTableRow(lines[i + 1]).map(c => {
+        if (c.startsWith(":") && c.endsWith(":")) return "center";
+        if (c.endsWith(":")) return "right";
+        return "left";
+      });
+      i += 1;
+      const bodyRows = [];
+      while (i + 1 < lines.length && lines[i + 1].trim() && lines[i + 1].includes("|")) {
+        i += 1;
+        bodyRows.push(splitTableRow(lines[i]));
+      }
+      const thHtml = headers.map((c, ci) => `<th style="text-align:${aligns[ci] || 'left'}">${inlineFmt(c)}</th>`).join("");
+      const tbHtml = bodyRows.map(r => `<tr>${headers.map((_, ci) => `<td style="text-align:${aligns[ci] || 'left'}">${inlineFmt(r[ci] || "")}</td>`).join("")}</tr>`).join("");
+      out.push(`<div class="md-table-wrap"><table class="md-table"><thead><tr>${thHtml}</tr></thead><tbody>${tbHtml}</tbody></table></div>`);
+      continue;
+    }
+
     if (/^---+$/.test(line.trim())) { closeLists(); out.push('<hr style="border:none;border-top:1px solid var(--border);margin:12px 0;"/>'); continue; }
     if (line.startsWith("### ")) { closeLists(); out.push(`<h3>${inlineFmt(line.slice(4))}</h3>`); continue; }
     if (line.startsWith("## ")) { closeLists(); out.push(`<h2>${inlineFmt(line.slice(3))}</h2>`); continue; }
@@ -2690,6 +2801,7 @@ function renderMarkdown(md) {
     out.push(`<p>${inlineFmt(line)}</p>`);
   }
   closeLists();
+  if (streaming) out.push('<span class="stream-cursor"></span>');
   return out.join("");
 }
 
@@ -2840,13 +2952,18 @@ function renderChat(msgs, job) {
           <button class="btn sm" onclick="prefillInput('针对上面的方案，我想微调：')">继续微调</button>
         </div>`;
     } else if (sender === "codex" && !job.running) {
-      actions = `
-        <div class="handoff-bar">
-          <button class="btn sm solid" onclick="launchGame()">启动试玩</button>
-          <button class="btn sm" onclick="runSelfCheck()">自检三条</button>
-          <button class="btn sm" onclick="submitVerdict('PASS')">验收通过</button>
-          <button class="btn sm danger" onclick="prefillInput('退回修改原因：')">退回修改</button>
-        </div>`;
+      const wsType = latestSnap?.active_workspace?.type || "general";
+      actions = wsType === "godot-game"
+        ? `<div class="handoff-bar">
+            <button class="btn sm solid" onclick="launchGame()">启动试玩</button>
+            <button class="btn sm" onclick="runSelfCheck()">自检三条</button>
+            <button class="btn sm" onclick="submitVerdict('PASS')">验收通过</button>
+            <button class="btn sm danger" onclick="prefillInput('退回修改原因：')">退回修改</button>
+          </div>`
+        : `<div class="handoff-bar">
+            <button class="btn sm" onclick="toggleInspector(true); switchInspTab('workspace')">查看代码改动</button>
+            <button class="btn sm" onclick="prefillInput('请针对刚才的改动补充修改：')">继续微调</button>
+          </div>`;
     }
     return `
       <div class="msg-agent">
@@ -2882,23 +2999,23 @@ function renderChat(msgs, job) {
     const recentLogs = (job.logs || []).slice(-18).join("\n");
     const traceOpen = window._traceOpen ? "open" : "";
     html += `
-      <div class="msg-agent">
+      <div class="msg-agent" id="liveAgentCard" data-agent="${escapeHtml(ag)}">
         <div class="agent-head">
           <div class="agent-id">
             <i class="pulse-dot"></i>
             <span>${escapeHtml(info.name)}</span>
             <span class="agent-role">${escapeHtml(info.role)} · 运行中</span>
           </div>
-          <span class="agent-time">${job.elapsed_seconds}s</span>
+          <span class="agent-time" id="liveElapsed">${job.elapsed_seconds}s</span>
         </div>
         <details class="trace-box" ${traceOpen} ontoggle="window._traceOpen = this.open">
           <summary>
-            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(step)}</span>
+            <span id="liveStepDesc" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(step)}</span>
             <span style="color:var(--text-muted);font-size:11px;flex-shrink:0;">执行步骤 ▾</span>
           </summary>
-          <div class="trace-logs">${escapeHtml(recentLogs || "正在初始化进程…")}</div>
+          <div class="trace-logs" id="liveTraceLogs">${escapeHtml(recentLogs || "正在初始化进程…")}</div>
         </details>
-        ${job.live_reply ? `<div class="agent-body">${renderMarkdown(job.live_reply)}</div>` : ""}
+        <div class="agent-body" id="liveReplyBody" style="${job.live_reply ? '' : 'display:none;'}">${job.live_reply ? renderMarkdown(job.live_reply, true) : ""}</div>
       </div>`;
   }
 
@@ -3586,9 +3703,83 @@ async function launchGame() {
   catch (e) { showToast(e.message); }
 }
 
+// --- Ultra-Smooth 180ms In-Place Streaming Patch (Zero DOM Thrashing) ---
+let lastLiveReplyRendered = "";
+function patchLiveStream(job) {
+  if (!latestSnap) return;
+  latestSnap.live_job = job;
+
+  const pill = document.getElementById("statusPill");
+  if (pill && job.running) {
+    pill.className = "status-pill running";
+    pill.innerHTML = `<i class="pulse-dot"></i><span>${escapeHtml((job.agent || "").toUpperCase())} · ${job.elapsed_seconds}s</span>`;
+  }
+
+  // Console Box (strictly respects user scroll-up)
+  const cBox = document.getElementById("consoleBox");
+  if (cBox && (job.logs || []).length) {
+    const nextLog = job.logs.join("\n");
+    if (cBox.textContent !== nextLog) {
+      const cAtBottom = (cBox.scrollHeight - cBox.scrollTop - cBox.clientHeight) < 36;
+      const cPrev = cBox.scrollTop;
+      cBox.textContent = nextLog;
+      cBox.scrollTop = cAtBottom ? cBox.scrollHeight : cPrev;
+    }
+  }
+
+  const card = document.getElementById("liveAgentCard");
+  const activeTid = latestSnap.active_thread?.id || "";
+  if (!card || (job.thread_id && job.thread_id !== activeTid) || card.dataset.agent !== (job.agent || "agy")) {
+    renderChat(latestSnap.messages, job);
+    lastLiveReplyRendered = job.live_reply || "";
+    return;
+  }
+
+  const scrollEl = document.getElementById("chatScroll");
+  const wasAtBottom = (scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight) < 48;
+  const prevTop = scrollEl.scrollTop;
+
+  const elTime = document.getElementById("liveElapsed");
+  if (elTime) elTime.textContent = `${job.elapsed_seconds}s`;
+  const elStep = document.getElementById("liveStepDesc");
+  if (elStep) elStep.textContent = job.current_step_desc || "正在思考与执行…";
+  const elLogs = document.getElementById("liveTraceLogs");
+  if (elLogs) elLogs.textContent = (job.logs || []).slice(-18).join("\n") || "正在初始化进程…";
+
+  const reply = job.live_reply || "";
+  const elBody = document.getElementById("liveReplyBody");
+  if (elBody && reply !== lastLiveReplyRendered) {
+    lastLiveReplyRendered = reply;
+    if (reply) {
+      elBody.style.display = "block";
+      elBody.innerHTML = renderMarkdown(reply, true);
+    } else {
+      elBody.style.display = "none";
+      elBody.innerHTML = "";
+    }
+  }
+  scrollEl.scrollTop = wasAtBottom ? scrollEl.scrollHeight : prevTop;
+}
+
 async function pollLoop() {
+  if (mutationInFlight === 0 && latestSnap?.live_job?.running) {
+    try {
+      const live = await api("/api/live");
+      const job = live.live_job || {};
+      const verChanged = Number(live.version || 0) > lastAppliedVersion;
+      if (!job.running || verChanged) {
+        lastLiveReplyRendered = "";
+        await refreshAll();
+      } else {
+        patchLiveStream(job);
+      }
+    } catch (e) {}
+    setTimeout(pollLoop, 180);
+    return;
+  }
+  lastLiveReplyRendered = "";
   await refreshAll();
-  setTimeout(pollLoop, 1500);
+  setTimeout(pollLoop, latestSnap?.live_job?.running ? 180 : 1600);
 }
 pollLoop();
 </script>
