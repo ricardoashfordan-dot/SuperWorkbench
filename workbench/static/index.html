@@ -1152,7 +1152,6 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           <span>Settings</span>
         </span>
-        <span class="sb-badge" id="sbSkillBadge">Skills</span>
       </button>
     </div>
 
@@ -2645,9 +2644,22 @@ function showToast(txt) {
 }
 
 // --- Mode Selector + @mention Auto-Routing ---
+function syncRailHighlight() {
+  const job = latestSnap?.live_job || {};
+  const activeTarget = job.pending_approval ? "xiu" : (currentMode === "pipeline" ? "agy" : currentMode);
+  ["xiu", "agy", "codex", "dsh"].forEach(id => {
+    const node = document.getElementById("rnode-" + id);
+    if (!node) return;
+    const isRun = !!job.running && job.agent === id;
+    node.classList.toggle("is-running", isRun);
+    node.classList.toggle("is-lock", !job.running && activeTarget === id);
+  });
+}
+
 function setMode(mode) {
   currentMode = mode;
   document.querySelectorAll(".mode-pill").forEach(p => p.classList.toggle("active", p.dataset.mode === mode));
+  syncRailHighlight();
 }
 const cmdInput = document.getElementById("cmdInput");
 cmdInput.addEventListener("input", () => {
@@ -3217,11 +3229,9 @@ function render(snap, fromMutation = false) {
   const shortB = bRole.model || bEng.short || "";
   document.getElementById("engineSummary").textContent = `${shortP} · ${shortB}`;
 
-  // Update Skills badges (Sidebar Settings + Composer chip)
+  // Update Skills count for composer menu
   const skillsList = snap.skills || [];
   const activeSkillsCount = skillsList.filter(s => s.active).length;
-  const sbBadge = document.getElementById("sbSkillBadge");
-  if (sbBadge) sbBadge.textContent = activeSkillsCount > 0 ? `${activeSkillsCount} 技能生效` : `${skillsList.length} 技能`;
   const chipTxt = document.getElementById("activeSkillChipText");
   if (chipTxt) chipTxt.textContent = activeSkillsCount > 0 ? `技能 (${activeSkillsCount})` : "技能";
 
@@ -3269,13 +3279,7 @@ function render(snap, fromMutation = false) {
   }
 
   // Mini Relay Rail Nodes
-  ["xiu", "agy", "codex", "dsh"].forEach(id => {
-    const node = document.getElementById("rnode-" + id);
-    if (!node) return;
-    const isRun = !!job.running && job.agent === id;
-    node.classList.toggle("is-running", isRun);
-    node.classList.toggle("is-lock", !isRun && st.edit_lock === id);
-  });
+  syncRailHighlight();
 
   // Messages + Mini Paper Plane Trigger
   const msgs = snap.messages || [];

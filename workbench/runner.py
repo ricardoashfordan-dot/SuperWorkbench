@@ -650,7 +650,7 @@ class JobManager:
                 if not self.abort_requested:
                     emit(
                         "done_single",
-                        "xiu" if slot in ("planner", "reviewer") else "dsh",
+                        "xiu",
                         f"{eng_label} ({'完成' if rc == 0 else f'退出码 {rc}'})",
                         full_reply or "执行完毕，请查看终端日志。",
                         node_id,
