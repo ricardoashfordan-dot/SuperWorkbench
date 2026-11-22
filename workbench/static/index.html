@@ -1975,9 +1975,58 @@ function t(zh, en) {
   return currentLang === "en" ? en : zh;
 }
 
+function fmtThreadTitle(raw) {
+  const s = String(raw || "").trim();
+  if (!s || s === "主对话") return t("主对话", "Main Thread");
+  if (s === "新对话") return t("新对话", "New Thread");
+  return s;
+}
+
+function fmtSkillSource(label) {
+  if (currentLang !== "en") return label;
+  const map = {
+    "内置推荐": "Built-in",
+    "自定义全局": "Global Custom",
+    "当前空间": "Workspace",
+    "本机 Codex": "Local Codex",
+    "本机 AGY": "Local AGY",
+    "本机 Claude": "Local Claude"
+  };
+  return map[label] || label;
+}
+
+function fmtSkillDesc(skill) {
+  if (currentLang !== "en") return skill.description || "";
+  const enMap = {
+    "aigc-storyboard": "Break down rough ideas or novel chapters into a structured AIGC short-drama storyboard table (3s hook, camera framing, and character consistency prompts).",
+    "code-review-strict": "Evidence-bound strict code audit & refactoring checklist (pinpoint edge-case bugs, race conditions, performance bottlenecks, and security hazards).",
+    "git-commit-release": "Draft clean Conventional Commit messages, bilingual changelogs, and GitHub Release notes automatically."
+  };
+  return enMap[skill.slug] || skill.description || "";
+}
+
+function fmtMcpTemplate(tpl) {
+  if (currentLang !== "en") return { title: tpl.title, desc: tpl.desc };
+  const enMap = {
+    playwright: ["Playwright Browser", "Let AI open web pages, take screenshots, click buttons, and test UI flows"],
+    github: ["GitHub Collaboration", "Query issues, open PRs, search repositories, and publish releases"],
+    figma: ["Figma Design Reader", "Read Figma layers, colors, and layout specs directly into production code"],
+    comfyui: ["ComfyUI / AIGC Bridge", "Push storyboard prompts directly to local ComfyUI image/video queues"],
+    filesystem: ["Extra Local Directory", "Grant AI read/write access to reference folders outside the current workspace"]
+  };
+  const pair = enMap[tpl.id];
+  return pair ? { title: pair[0], desc: pair[1] } : { title: tpl.title, desc: tpl.desc };
+}
+
 const STATIC_I18N = [
   [".sb-sec-head > span", "工作空间", "Workspaces"],
   ["#modelPopover .pop-title > span", "快速切换模型", "Quick Model Switch"],
+  ["#quickEffortField > label", "思考深度 (Codex)", "Reasoning Effort (Codex)"],
+  ["#quickBuilderEffort option[value='low']", "轻量 (low)", "Low (low)"],
+  ["#quickBuilderEffort option[value='medium']", "均衡 (medium)", "Medium (medium)"],
+  ["#quickBuilderEffort option[value='high']", "深度 (high · 推荐)", "High (high · Recommended)"],
+  ["#quickBuilderEffort option[value='xhigh']", "极限 (xhigh)", "Max (xhigh)"],
+  ["#modelPopover .btn.sm", "高级：配置角色引擎 / 接入 API", "Advanced: Role Bindings & APIs"],
   [".engine-trigger span", "模型与引擎", "Models & Engines"],
   ["#btnCompact span", "压缩上下文", "Compact"],
   ["#approvalBar .approval-info span:last-child", "方案已就绪，确认后交棒执行（可在下方输入框补充说明）", "Plan ready — confirm to hand off to Builder (optional notes below)"],
@@ -1989,8 +2038,28 @@ const STATIC_I18N = [
   [".insp-tab[data-tab='console']", "终端日志", "Console"],
   [".insp-tab[data-tab='workspace']", "改动与文件", "Changes & Files"],
   [".insp-tab[data-tab='artifacts']", "审片与预览", "Preview & Media"],
+  ["#gatesCard .insp-card-title", "客观门禁与实测指标", "Quality Gates & Metrics"],
+  ["#gatesCard button[onclick*='runSelfCheck']", "跑自检三条", "Run Self-Check"],
+  ["#gatesCard button[onclick*='runDshVerify']", "DSH 核验", "DSH Verify"],
+  ["#gatesCard button[onclick*='openObjectionPrompt']", "提异议", "Objection"],
   ["#gitCard .insp-card-title > span:first-child", "Git 代码改动", "Git Changes"],
   ["#btnGitDraft > span", "AI 起草", "AI Draft"],
+  ["#inspWorkspaceTab > .insp-card:nth-of-type(4) .insp-card-title > span:first-child", "最近修改文件（点击查看源码/Diff）", "Recent Files (Click for Source / Diff)"],
+  ["#aigcScreeningCard .insp-card-title", "AIGC 分镜画廊与音视频审片室", "AIGC Storyboard Gallery & Screening Room"],
+  ["#inspArtifactsTab > .insp-card:nth-of-type(2) .insp-card-title", "最新施工单 (NEXT_FOR_CODEX.md)", "Latest Handoff (NEXT_FOR_CODEX.md)"],
+  ["#mediaCard .insp-card-title", "画面与概念图预览", "Screenshots & Concept Preview"],
+  ["#newWsType option[value='general']", "通用研发项目", "General Software Project"],
+  ["#newWsType option[value='aigc-studio']", "AIGC 制片空间（脚本 / 分镜 / 剪辑）", "AIGC Studio (Script / Storyboard / Edit)"],
+  ["#newWsType option[value='web-app']", "Web / 前端全栈", "Web / Full-Stack App"],
+  ["#newWsType option[value='python']", "Python / 脚本与数据", "Python / Scripts & Data"],
+  ["#newWsType option[value='godot-game']", "Godot 游戏工程", "Godot Game Project"],
+  ["#newWsType option[value='docs']", "策划与文档空间", "Docs & Planning Workspace"],
+  ["#wsModal .modal-foot .btn:first-child", "取消", "Cancel"],
+  ["#delModal h3", "移除工作空间", "Remove Workspace"],
+  ["#delModal .modal-foot .btn:first-child", "取消", "Cancel"],
+  ["#delModal .modal-foot .btn.danger", "确认移除", "Remove"],
+  ["#guideModal h3", "30 秒上手指南 · Super Workbench", "30-Second Quick Guide · Super Workbench"],
+  ["#guideModal .modal-foot .btn", "知道了，开始工作", "Got It, Let's Build"],
   ["#snav-general .snav-title", "通用偏好", "General"],
   ["#snav-skills .snav-title", "技能 Skills", "Skills"],
   ["#snav-roles .snav-title", "角色与引擎", "Roles & Engines"],
@@ -2007,7 +2076,46 @@ const STATIC_I18N = [
   ["#themeOptDark", "暗夜深色", "Obsidian Dark"],
   ["#themeOptLight", "纸白浅色", "Muse Light"],
   ["#lblPrefGateTitle", "自动流水线 · 执行前暂停审批", "Auto Pipeline · Pause Before Build"],
-  ["#lblPrefGateDesc", "开启后，「全自动流转」会在策划输出方案后暂停，等你点一下批准再动手改文件。", "When enabled, Auto Pipeline pauses after Planner outputs a plan and waits for your approval."]
+  ["#lblPrefGateDesc", "开启后，「全自动流转」会在策划输出方案后暂停，等你点一下批准再动手改文件。", "When enabled, Auto Pipeline pauses after Planner outputs a plan and waits for your approval."],
+  // Pane 1: Skills
+  ["#pane-skills > details.explain-fold > summary > span:first-child", "ⓘ 什么是 Skill（技能）？点此查看说明", "ⓘ What is a Skill? Click to expand"],
+  ["#skillFilterBar button[data-sf='all']", "全部", "All"],
+  ["#skillFilterBar button[data-sf='active']", "已启用", "Active"],
+  ["#skillFilterBar button[data-sf='custom']", "自定义", "Custom"],
+  ["#skillFilterBar button[data-sf='ext']", "本机发现", "Discovered"],
+  ["#pane-skills button[onclick*='toggleSkillCreateBox']", "+ 新建技能", "+ New Skill"],
+  ["#pane-skills button[onclick*='toggleSkillImportBox']", "导入本地 Skill", "Import Local Skill"],
+  ["#skillCreateBox .insp-card-title", "创建新技能（自动生成标准 SKILL.md，无需懂 YAML）", "Create New Skill (Auto-generates standard SKILL.md)"],
+  ["#newSkillScope option[value='user']", "全局可用（存放在工作台技能库）", "Global (Saved in Workbench skill library)"],
+  ["#newSkillScope option[value='workspace']", "仅当前空间（存放在项目 .agents/skills/）", "Current Workspace (.agents/skills/)"],
+  ["#skillCreateBox button[onclick*='toggleSkillCreateBox(false)']", "取消", "Cancel"],
+  ["#skillCreateBox button[onclick*='submitCreateSkill']", "创建并启用", "Create & Enable"],
+  ["#skillImportBox .insp-card-title", "导入本地已有 Skill（支持 SKILL.md 文件或技能文件夹路径）", "Import Local Skill (Path to SKILL.md or skill folder)"],
+  ["#skillImportBox button[onclick*='submitImportSkill']", "一键导入", "Import"],
+  // Pane 2: Roles
+  ["#pane-roles details.explain-fold > summary > span:first-child", "ⓘ 如何分配这三个角色？点此查看说明", "ⓘ How to assign the three role slots? Click to expand"],
+  ["#pane-roles button[onclick*='autoRecommendRoles']", "一键推荐配置", "Auto-Recommend"],
+  ["#pane-roles button[onclick*='saveRoleBindings']", "保存角色配置", "Save Role Bindings"],
+  // Pane 3: Engines & API
+  ["#pane-engines > .insp-card:first-child > .insp-card-title", "本机已检测 CLI 与自定义引擎", "Detected Local CLIs & Custom Engines"],
+  ["#pane-engines > .insp-card:last-child .insp-card-title", "接入新的云端 API 或本地模型（点模板自动填表）", "Connect Cloud API or Local Model (1-click templates)"],
+  ["#pane-engines button[onclick*=\"presetEngine('ollama')\"]", "免费本地 Ollama", "Local Ollama"],
+  ["#pane-engines button[onclick*=\"presetEngine('custom-cli')\"]", "自定义命令行", "Custom CLI"],
+  ["#engKind option[value='openai-compat']", "云端 API / 本地 Ollama（免安装 CLI）", "Cloud API / Local Ollama (No CLI required)"],
+  ["#engKind option[value='custom-cli']", "本机命令行工具（CLI）", "Local Command-Line Tool (CLI)"],
+  ["#pane-engines button[onclick*='submitAddEngine']", "添加到引擎库", "Add to Engine Library"],
+  // Pane 4: MCP
+  ["#pane-mcp > details.explain-fold > summary > span:first-child", "ⓘ 什么是 MCP（外部工具协议）？点此查看说明", "ⓘ What is MCP (Model Context Protocol)? Click to expand"],
+  ["#pane-mcp button[onclick*='toggleMcpForm(true)']", "+ 添加 MCP 工具", "+ Add MCP Tool"],
+  ["#pane-mcp button[onclick*='scanCliMcps']", "检测本机已有 MCP", "Scan Local CLI MCPs"],
+  ["#mcpFormBox .insp-card-title", "一键套用模板或自定义接入", "Apply Template or Custom Setup"],
+  ["#mcpTransport option[value='stdio']", "本地命令（stdio / npx / uvx）", "Local Command (stdio / npx / uvx)"],
+  ["#mcpTransport option[value='http']", "远程或本地接口（HTTP URL）", "Remote or Local Endpoint (HTTP URL)"],
+  ["#mcpFormBox button[onclick*='toggleMcpForm(false)']", "取消", "Cancel"],
+  ["#mcpFormBox button[onclick*='submitMcpServer']", "保存配置", "Save MCP"],
+  ["#mcpQuickTemplatesCard .insp-card-title", "常用 MCP 模板（点一下自动填表）", "Popular MCP Templates (Click to auto-fill)"],
+  // Pane 5: Plugins
+  ["#pane-plugins > details.explain-fold > summary > span:first-child", "ⓘ 什么是工作流插件（Plugins）？点此查看说明", "ⓘ What are Workflow Plugins? Click to expand"]
 ];
 
 function applyLang(lang) {
@@ -2043,6 +2151,107 @@ function applyLang(lang) {
   const uInput = document.getElementById("inputUserName");
   if (uInput) {
     uInput.placeholder = t("例如：修 / Ricardo", "e.g. Ricardo / Alex");
+  }
+
+  // Translate form labels & placeholders across Settings panes
+  const setLabelFor = (inputId, zh, en) => {
+    const inp = document.getElementById(inputId);
+    const lbl = inp?.closest(".field")?.querySelector("label");
+    if (lbl) lbl.textContent = currentLang === "en" ? en : zh;
+  };
+  const setPh = (inputId, zh, en) => {
+    const inp = document.getElementById(inputId);
+    if (inp) inp.placeholder = currentLang === "en" ? en : zh;
+  };
+
+  setLabelFor("newSkillName", "技能名称", "Skill Name");
+  setPh("newSkillName", "例如：小红书爆款文案 / 漫剧分镜", "e.g. Storyboard Director / Strict Reviewer");
+  setLabelFor("newSkillScope", "保存范围", "Save Scope");
+  setLabelFor("newSkillDesc", "一句话用途说明（展示给小白和 / 菜单）", "One-Line Description (Shown in list & / menu)");
+  setPh("newSkillDesc", "例如：按爆款钩子+结构化分镜表输出 60 秒漫剧脚本", "e.g. Output 60s short-drama script with 3s hook & shot table");
+  setLabelFor("newSkillBody", "具体执行规范（直接用大白话写清楚要求即可）", "Execution Instructions (Plain language rules)");
+  setPh("newSkillBody", "例如：\n1. 前 3 秒必须给出强悬念冲突；\n2. 输出 Markdown 表格，包含镜号、景别、台词、生图提示词；\n3. 保持主角外貌描述跨镜一致。", "e.g.\n1. Start with a strong 3s hook;\n2. Output a Markdown table with Shot, Framing, Dialogue, Image Prompt;\n3. Keep character traits consistent across shots.");
+  setPh("importSkillPath", "粘贴本地技能文件夹路径或 SKILL.md 绝对路径，如 E:\\my-skills\\storyboard", "Paste absolute path to skill folder or SKILL.md, e.g. E:\\my-skills\\storyboard");
+
+  setLabelFor("engName", "给它起个名字", "Display Name");
+  setPh("engName", "例如：DeepSeek 策划 / 本地模型", "e.g. DeepSeek Planner / Local Ollama");
+  setLabelFor("engKind", "连接方式", "Connection Type");
+  setLabelFor("engBaseUrl", "接口地址（点上方模板自动填好）", "Endpoint Base URL (Click a preset above to auto-fill)");
+  setLabelFor("engApiKey", "API 密钥（本地 Ollama 无需填写）", "API Key (Leave empty for local Ollama)");
+  setPh("engApiKey", "粘贴 sk-... 或留空", "Paste sk-... or leave empty");
+  setLabelFor("engModel", "使用的模型名称", "Default Model Name");
+  setPh("engModel", "例如 deepseek-reasoner / qwen2.5:14b", "e.g. deepseek-reasoner / qwen2.5:14b");
+  setLabelFor("engCmdTpl", "命令行模板（{prompt} 会自动替换为你的指令）", "Command Template ({prompt} is replaced with your prompt)");
+
+  setLabelFor("mcpName", "工具标识（英文，如 playwright）", "Tool ID (lowercase, e.g. playwright)");
+  setPh("mcpName", "例如：playwright / github / figma", "e.g. playwright / github / figma");
+  setLabelFor("mcpTransport", "连接方式", "Transport");
+  setLabelFor("mcpTitle", "中文名称（选填）", "Display Title (optional)");
+  setPh("mcpTitle", "例如：Playwright 浏览器", "e.g. Playwright Browser");
+  setLabelFor("mcpDesc", "用途简介（选填）", "Short Description (optional)");
+  setPh("mcpDesc", "一句话说明这个工具做什么", "One sentence describing what this tool does");
+  setLabelFor("mcpCmd", "启动命令", "Command");
+  setLabelFor("mcpArgs", "启动参数（空格分隔）", "Arguments (space-separated)");
+  setLabelFor("mcpUrl", "MCP 服务地址（URL）", "MCP Server URL");
+  setLabelFor("mcpEnv", "环境变量 / 密钥（选填，每行一条 KEY=VALUE）", "Environment Variables / Secrets (optional, one KEY=VALUE per line)");
+  setPh("mcpEnv", "例如：GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx", "e.g. GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx");
+  setLabelFor("newWsName", "空间名称", "Workspace Name");
+  setPh("newWsName", "例如：SuperWorkbench-OSS / 个人网站", "e.g. SuperWorkbench-OSS / MyWebApp");
+  setLabelFor("newWsPath", "本地目录路径（若不存在将自动创建）", "Local Directory Path (Created automatically if missing)");
+  setPh("newWsPath", "例如：E:\\Projects\\MyWorkspace", "e.g. E:\\Projects\\MyWorkspace");
+  setLabelFor("newWsType", "空间类型", "Workspace Preset");
+  const mcpAutoLbl = document.getElementById("mcpAutoSync")?.parentElement;
+  if (mcpAutoLbl && mcpAutoLbl.lastChild) {
+    mcpAutoLbl.lastChild.textContent = " " + t("保存并一键同步到本机已装 CLI", "Save & auto-sync to installed local CLIs");
+  }
+
+  // Explain folds body content
+  const setExplain = (paneId, zhHtml, enHtml) => {
+    const el = document.querySelector(`#${paneId} details.explain-fold .explain-content`);
+    if (el) el.innerHTML = currentLang === "en" ? enHtml : zhHtml;
+  };
+  setExplain("pane-skills",
+    '<strong>Skill 就像给 AI 员工发的《岗位 SOP 手册》（标准 <code class="inline">SKILL.md</code>）。</strong><br/>你可以在下方开关决定「全局常驻」或「仅在当前空间生效」，也可以随时在对话框输入 <code class="inline">/</code> 临时点名召唤某一项技能——无论是本地 CLI 还是 DeepSeek / Ollama 纯 API，都会自动按这份规范执行。',
+    '<strong>A Skill is an SOP playbook (<code class="inline">SKILL.md</code>) for your AI agents.</strong><br/>Toggle skills globally or per-workspace below, or type <code class="inline">/</code> in the composer to mount a skill on the fly — works across both local CLIs and pure HTTP APIs.'
+  );
+  setExplain("pane-roles",
+    '<strong>只需为「核心执行」绑定 1 个本地 CLI（如 Codex / Claude / AGY）</strong>，其余「策划」与「质检」岗位无论绑 CLI 还是接 DeepSeek / Ollama 纯 API 均可正常工作。',
+    '<strong>Only the Core Builder slot requires a local file-editing CLI (e.g. Codex / Claude / AGY).</strong> Planner and Reviewer can freely bind to any CLI, local Ollama model, or cloud API.'
+  );
+  setExplain("pane-mcp",
+    '<strong>如果说 Skill 是“教 AI 怎么想的说明书”，那么 MCP 就是给 AI 接上的“手和眼”</strong>——让它能操控浏览器、读取 Figma、查 GitHub 或连本地 ComfyUI。在这里填好后，可一键同步到你本机已安装的 AGY / Codex / Claude CLI，无需手写 JSON。',
+    '<strong>If Skills teach AI how to think, MCP gives AI hands and eyes</strong> — browser automation, Figma reading, GitHub PRs, or local ComfyUI queues. Configure once here and sync to your installed AGY / Codex / Claude CLIs with one click.'
+  );
+  setExplain("pane-plugins",
+    '<strong>工作流插件把某一类项目的「右侧专属抽屉面板 + 目录初始化 + 门禁检查 + 推荐技能」打包成开箱即用的行业套装</strong>，且按工作空间隔离，互不干扰。',
+    '<strong>Workflow Plugins bundle dedicated Inspector panels, directory initializers, and quality gates for specific project types</strong>, cleanly isolated per workspace.'
+  );
+
+  // Plugins cards
+  const pCards = document.querySelectorAll("#pane-plugins .skill-card");
+  const pluginMeta = [
+    ["Godot 游戏研发实验室", "Godot Game Dev Lab", "内置已启用", "Built-in · Active", "godot-game 空间生效", "Active in godot-game", "提供提交前自检三条、FPS/输入延迟硬指标灯、轮次里程碑、实机截图预览与一键启动试玩。", "Pre-submit 3-gate checks, FPS/input-latency indicators, round milestones, screenshots, and 1-click playtest launch."],
+    ["AIGC 漫剧与短片制片空间", "AIGC Short Drama & Film Studio", "内置已启用", "Built-in · Active", "aigc-studio 空间生效", "Active in aigc-studio", "自动初始化 5 级制片目录（脚本/分镜/素材/剪辑/成片），角色槽位切换为「编剧 · 制片 · 审片」，右侧抽屉内置分镜网格画廊、5 阶段进度条与 HTML5 音视频审片室。", "Auto-initializes 5-stage studio folders (script/storyboard/assets/edit/output), switches role labels to Script · Produce · Review, and enables the Storyboard Gallery & HTML5 Screening Room."],
+    ["Live Git Diff 与源码审查抽屉", "Live Git Diff & Source Review Drawer", "内置已启用", "Built-in · Active", "general / web / python / godot", "general / web / python / godot", "在右侧抽屉的「代码改动 / 文件」页签实时查看 Git 变更文件、红绿高亮代码 Diff 与无 Git 目录下的行号源码预览。", "Inspect changed Git files, red/green unified diffs, AI-drafted commit messages, and line-numbered source previews in the Right Inspector."]
+  ];
+  pCards.forEach((card, idx) => {
+    const m = pluginMeta[idx];
+    if (!m) return;
+    const st = card.querySelector("strong");
+    const src = card.querySelector(".skill-src");
+    const scope = card.querySelector(".skill-top > span:last-child");
+    const desc = card.querySelector(":scope > div:last-child");
+    if (st) st.textContent = currentLang === "en" ? m[1] : m[0];
+    if (src) src.textContent = currentLang === "en" ? m[3] : m[2];
+    if (scope) scope.textContent = currentLang === "en" ? m[5] : m[4];
+    if (desc) desc.textContent = currentLang === "en" ? m[7] : m[6];
+  });
+
+  const activeNav = document.querySelector(".settings-nav .snav-item.active");
+  if (activeNav) {
+    const tabId = (activeNav.id || "").replace("snav-", "") || "general";
+    const titleEl = document.getElementById("settingsPaneTitle");
+    if (titleEl) titleEl.textContent = getSettingsTitle(tabId);
   }
 
   lastChatSig = "";
@@ -2154,7 +2363,7 @@ function renderSkillsPane() {
   });
 
   if (!filtered.length) {
-    box.innerHTML = `<div style="text-align:center;padding:28px 12px;color:var(--text-muted);font-size:12.5px;">该分类下暂无技能。点上方「+ 新建技能」即可用大白话写一个！</div>`;
+    box.innerHTML = `<div style="text-align:center;padding:28px 12px;color:var(--text-muted);font-size:12.5px;">${t("该分类下暂无技能。点上方「+ 新建技能」即可用大白话写一个！", "No skills in this category yet. Click '+ New Skill' above to create one in plain language.")}</div>`;
     return;
   }
 
@@ -2165,18 +2374,18 @@ function renderSkillsPane() {
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             <strong style="font-size:13px;">${escapeHtml(s.name)}</strong>
             <span class="skill-slug">/${escapeHtml(s.slug)}</span>
-            <span class="skill-src">${escapeHtml(s.source_label)}</span>
+            <span class="skill-src">${escapeHtml(fmtSkillSource(s.source_label))}</span>
           </div>
-          <div style="font-size:12px;color:var(--text-sec);margin-top:4px;">${escapeHtml(s.description)}</div>
+          <div style="font-size:12px;color:var(--text-sec);margin-top:4px;">${escapeHtml(fmtSkillDesc(s))}</div>
         </div>
         <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
-          <button class="toggle-chip ${s.enabled_global ? 'on' : ''}" title="在所有工作空间中自动生效" onclick="toggleSkill('${escapeHtml(s.id)}','global',${!s.enabled_global})">全局</button>
-          <button class="toggle-chip ${s.enabled_workspace ? 'on' : ''}" title="仅在当前工作空间生效" onclick="toggleSkill('${escapeHtml(s.id)}','workspace',${!s.enabled_workspace})">本空间</button>
-          ${s.editable ? `<button class="ws-act-btn del" title="删除自定义技能" onclick="deleteSkill('${escapeHtml(s.id)}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>` : ""}
+          <button class="toggle-chip ${s.enabled_global ? 'on' : ''}" title="${t("在所有工作空间中自动生效", "Active across all workspaces")}" onclick="toggleSkill('${escapeHtml(s.id)}','global',${!s.enabled_global})">${t("全局", "Global")}</button>
+          <button class="toggle-chip ${s.enabled_workspace ? 'on' : ''}" title="${t("仅在当前工作空间生效", "Active in current workspace only")}" onclick="toggleSkill('${escapeHtml(s.id)}','workspace',${!s.enabled_workspace})">${t("本空间", "Workspace")}</button>
+          ${s.editable ? `<button class="ws-act-btn del" title="${t("删除自定义技能", "Delete custom skill")}" onclick="deleteSkill('${escapeHtml(s.id)}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>` : ""}
         </div>
       </div>
       <details style="font-size:11.5px;color:var(--text-muted);">
-        <summary style="cursor:pointer;user-select:none;">查看规范正文</summary>
+        <summary style="cursor:pointer;user-select:none;">${t("查看规范正文", "View Skill Specification")}</summary>
         <pre style="margin:6px 0 0;padding:8px 10px;border-radius:8px;background:var(--bg-code);border:1px solid var(--border);white-space:pre-wrap;font-family:Consolas,monospace;color:var(--text-sec);max-height:150px;overflow-y:auto;">${escapeHtml(s.body)}</pre>
       </details>
     </div>`).join("");
@@ -2395,9 +2604,9 @@ function renderStudioModal() {
   const engMap = Object.fromEntries(engines.map(e => [e.id, e]));
 
   const slotMeta = [
-    { id: "planner", title: "1. 策划 / 方案（AIGC：编剧与分镜）", hint: "负责思考讨论，CLI 或纯 API 均可" },
-    { id: "builder", title: "2. 核心执行（AIGC：制片与剪辑）", hint: "负责改代码跑命令，推荐绑定本地 CLI" },
-    { id: "reviewer", title: "3. 独立质检（AIGC：审片与检查）", hint: "负责审查把关，CLI 或纯 API 均可" }
+    { id: "planner", title: t("1. 策划 / 方案（AIGC：编剧与分镜）", "1. Planner / Architecture (AIGC: Script & Storyboard)"), hint: t("负责思考讨论，CLI 或纯 API 均可", "Brainstorming & planning — works with CLI or pure API") },
+    { id: "builder", title: t("2. 核心执行（AIGC：制片与剪辑）", "2. Core Builder (AIGC: Production & Editing)"), hint: t("负责改代码跑命令，推荐绑定本地 CLI", "Edits files & runs commands — local CLI recommended") },
+    { id: "reviewer", title: t("3. 独立质检（AIGC：审片与检查）", "3. Independent Reviewer (AIGC: Screening & QA)"), hint: t("负责审查把关，CLI 或纯 API 均可", "Read-only verification & review — CLI or pure API") }
   ];
 
   const readyOpts = engines.filter(e => e.ready);
@@ -2408,22 +2617,26 @@ function renderStudioModal() {
     const curEng = engMap[r.engine] || engines[0] || {};
     const curModel = r.model || curEng.default_model || "";
     const optHtml = [
-      readyOpts.length ? `<optgroup label="本机可用引擎">${readyOpts.map(e => `<option value="${escapeHtml(e.id)}" ${e.id === r.engine ? 'selected' : ''}>${escapeHtml(e.name)} ${e.kind === 'openai-compat' ? '· API' : '· CLI'}</option>`).join("")}</optgroup>` : "",
-      notReadyOpts.length ? `<optgroup label="尚未安装">${notReadyOpts.map(e => `<option value="${escapeHtml(e.id)}" ${e.id === r.engine ? 'selected' : ''}>${escapeHtml(e.name)}（未检测到）</option>`).join("")}</optgroup>` : ""
+      readyOpts.length ? `<optgroup label="${t("本机可用引擎", "Available Engines")}">${readyOpts.map(e => `<option value="${escapeHtml(e.id)}" ${e.id === r.engine ? 'selected' : ''}>${escapeHtml(e.name)} ${e.kind === 'openai-compat' ? '· API' : '· CLI'}</option>`).join("")}</optgroup>` : "",
+      notReadyOpts.length ? `<optgroup label="${t("尚未安装", "Not Installed")}">${notReadyOpts.map(e => `<option value="${escapeHtml(e.id)}" ${e.id === r.engine ? 'selected' : ''}>${escapeHtml(e.name)} (${t("未检测到", "Not detected")})</option>`).join("")}</optgroup>` : ""
     ].join("");
 
     const models = curEng.models || [];
     const hasCurInList = models.some(m => m.id === curModel);
     const modelControl = (curEng.kind === "openai-compat" || models.length <= 1)
-      ? `<input id="slot-model-${s.id}" value="${escapeHtml(curModel)}" placeholder="输入模型名称" />`
+      ? `<input id="slot-model-${s.id}" value="${escapeHtml(curModel)}" placeholder="${t("输入模型名称", "Enter model name")}" />`
       : `<select id="slot-model-${s.id}">
           ${!hasCurInList && curModel ? `<option value="${escapeHtml(curModel)}" selected>${escapeHtml(curModel)}</option>` : ""}
           ${models.map(m => `<option value="${escapeHtml(m.id)}" ${m.id === curModel ? 'selected' : ''}>${escapeHtml(m.label || m.id)}</option>`).join("")}
         </select>`;
 
     const warnApi = (s.id === "builder" && curEng.kind === "openai-compat")
-      ? `<div style="font-size:11px;color:var(--c-warn);margin-top:4px;">提示：纯 API 无法直接修改硬盘里的代码文件；如需自动写代码，建议为「核心执行」选一个本地 CLI。</div>`
+      ? `<div style="font-size:11px;color:var(--c-warn);margin-top:4px;">${t("提示：纯 API 无法直接修改硬盘里的代码文件；如需自动写代码，建议为「核心执行」选一个本地 CLI。", "Note: Pure HTTP APIs cannot edit local files directly; bind a local CLI to Core Builder for file editing.")}</div>`
       : "";
+
+    const effortList = currentLang === "en"
+      ? [["low","Low"],["medium","Medium"],["high","High"],["xhigh","Max"]]
+      : [["low","轻量"],["medium","均衡"],["high","深度"],["xhigh","极限"]];
 
     return `
       <div class="insp-card">
@@ -2433,18 +2646,18 @@ function renderStudioModal() {
         </div>
         <div style="display:grid;grid-template-columns:1.1fr 1.25fr ${curEng.supports_effort ? '0.8fr' : ''};gap:8px;">
           <div class="field">
-            <label>底层引擎</label>
+            <label>${t("底层引擎", "Engine")}</label>
             <select id="slot-eng-${s.id}" onchange="onSlotEngineChange('${s.id}')">${optHtml}</select>
           </div>
           <div class="field">
-            <label>选择模型</label>
+            <label>${t("选择模型", "Model")}</label>
             ${modelControl}
           </div>
           ${curEng.supports_effort ? `
           <div class="field">
-            <label>思考深度</label>
+            <label>${t("思考深度", "Reasoning Effort")}</label>
             <select id="slot-effort-${s.id}">
-              ${[["low","轻量"],["medium","均衡"],["high","深度"],["xhigh","极限"]].map(([lv, nm]) => `<option value="${lv}" ${lv === (r.effort || 'high') ? 'selected' : ''}>${nm} (${lv})</option>`).join("")}
+              ${effortList.map(([lv, nm]) => `<option value="${lv}" ${lv === (r.effort || 'high') ? 'selected' : ''}>${nm} (${lv})</option>`).join("")}
             </select>
           </div>` : ""}
         </div>
@@ -2457,11 +2670,11 @@ function renderStudioModal() {
       <div style="display:flex;align-items:center;gap:8px;min-width:0;">
         <i class="s-dot ${e.ready ? 'on' : 'off'}"></i>
         <div style="min-width:0;">
-          <div style="font-size:12.5px;font-weight:550;">${escapeHtml(e.name)} <span style="font-size:11px;color:var(--text-muted);font-weight:400;">· ${e.kind === 'openai-compat' ? '云端/本地 API' : '本地 CLI'}</span></div>
-          <div style="font-size:11px;color:var(--text-muted);font-family:Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(e.base_url || e.path || e.command_template || '未在本机检测到')}</div>
+          <div style="font-size:12.5px;font-weight:550;">${escapeHtml(e.name)} <span style="font-size:11px;color:var(--text-muted);font-weight:400;">· ${e.kind === 'openai-compat' ? t('云端/本地 API', 'Cloud / Local API') : t('本地 CLI', 'Local CLI')}</span></div>
+          <div style="font-size:11px;color:var(--text-muted);font-family:Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(e.base_url || e.path || e.command_template || t('未在本机检测到', 'Not detected on this machine'))}</div>
         </div>
       </div>
-      ${!e.builtin ? `<button class="btn sm danger" onclick="deleteCustomEngine('${e.id}')">移除</button>` : `<span style="font-size:11px;color:var(--text-muted);">${e.ready ? '已就绪' : '未安装'}</span>`}
+      ${!e.builtin ? `<button class="btn sm danger" onclick="deleteCustomEngine('${e.id}')">${t("移除", "Remove")}</button>` : `<span style="font-size:11px;color:var(--text-muted);">${e.ready ? t('已就绪', 'Ready') : t('未安装', 'Not Installed')}</span>`}
     </div>`).join("");
 
   const gateToggle = document.getElementById("toggleApproveGate");
@@ -2581,32 +2794,40 @@ function renderMcpPane() {
   const readyClis = ["agy", "codex", "claude"].filter(c => clis[c]?.installed).map(c => c.toUpperCase());
   const hint = document.getElementById("mcpCliHint");
   if (hint) {
-    hint.textContent = readyClis.length ? `可一键同步至：${readyClis.join(" / ")}` : "未检测到支持 MCP 的本地 CLI";
+    hint.textContent = readyClis.length
+      ? `${t("可一键同步至：", "One-click sync to: ")}${readyClis.join(" / ")}`
+      : t("未检测到支持 MCP 的本地 CLI", "No MCP-compatible local CLI detected");
   }
 
   const templates = mcp.templates || [];
   const tplBtns = document.getElementById("mcpTemplateBtns");
   if (tplBtns) {
-    tplBtns.innerHTML = templates.map(t => `<button class="btn sm" onclick="applyMcpTemplate('${escapeHtml(t.id)}')">${escapeHtml(t.title)}</button>`).join("");
+    tplBtns.innerHTML = templates.map(tpl => {
+      const m = fmtMcpTemplate(tpl);
+      return `<button class="btn sm" onclick="applyMcpTemplate('${escapeHtml(tpl.id)}')">${escapeHtml(m.title)}</button>`;
+    }).join("");
   }
 
   const quickGrid = document.getElementById("mcpQuickTemplatesGrid");
   if (quickGrid) {
-    quickGrid.innerHTML = templates.map(t => `
-      <div class="skill-card" style="padding:10px;cursor:pointer;" onclick="applyMcpTemplate('${escapeHtml(t.id)}', true)">
+    quickGrid.innerHTML = templates.map(tpl => {
+      const m = fmtMcpTemplate(tpl);
+      return `
+      <div class="skill-card" style="padding:10px;cursor:pointer;" onclick="applyMcpTemplate('${escapeHtml(tpl.id)}', true)">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
-          <strong style="font-size:12.5px;">${escapeHtml(t.title)}</strong>
-          <span class="skill-src">${escapeHtml(t.transport)}</span>
+          <strong style="font-size:12.5px;">${escapeHtml(m.title)}</strong>
+          <span class="skill-src">${escapeHtml(tpl.transport)}</span>
         </div>
-        <span style="font-size:11.5px;color:var(--text-muted);">${escapeHtml(t.desc)}</span>
-      </div>`).join("");
+        <span style="font-size:11.5px;color:var(--text-muted);">${escapeHtml(m.desc)}</span>
+      </div>`;
+    }).join("");
   }
 
   const servers = mcp.servers || [];
   const listBox = document.getElementById("mcpListBox");
   if (listBox) {
     if (!servers.length) {
-      listBox.innerHTML = `<div style="font-size:12px;color:var(--text-muted);padding:4px 2px;">尚未添加任何 MCP 工具，点下方常用模板即可 10 秒零 JSON 接入。</div>`;
+      listBox.innerHTML = `<div style="font-size:12px;color:var(--text-muted);padding:4px 2px;">${t("尚未添加任何 MCP 工具，点下方常用模板即可 10 秒零 JSON 接入。", "No MCP tools added yet. Click any template below to set up in 10 seconds with zero JSON.")}</div>`;
     } else {
       listBox.innerHTML = servers.map(s => {
         const endpoint = s.transport === "http" ? s.url : `${s.command} ${(s.args || []).join(" ")}`.trim();
@@ -2617,12 +2838,12 @@ function renderMcpPane() {
               <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
                 <strong style="font-size:13px;">${escapeHtml(s.title || s.name)}</strong>
                 <span class="skill-src">${escapeHtml(s.name)} · ${escapeHtml(s.transport)}</span>
-                ${synced || '<span class="skill-src">未同步 CLI</span>'}
+                ${synced || `<span class="skill-src">${t("未同步 CLI", "Not synced")}</span>`}
               </div>
               <div style="display:flex;gap:5px;">
-                <button class="btn sm" onclick="editMcpServer('${escapeHtml(s.name)}')">编辑</button>
-                <button class="btn sm" onclick="syncMcpServer('${escapeHtml(s.name)}')">同步 CLI</button>
-                <button class="btn sm danger" onclick="deleteMcpServer('${escapeHtml(s.name)}')">删除</button>
+                <button class="btn sm" onclick="editMcpServer('${escapeHtml(s.name)}')">${t("编辑", "Edit")}</button>
+                <button class="btn sm" onclick="syncMcpServer('${escapeHtml(s.name)}')">${t("同步 CLI", "Sync CLI")}</button>
+                <button class="btn sm danger" onclick="deleteMcpServer('${escapeHtml(s.name)}')">${t("删除", "Delete")}</button>
               </div>
             </div>
             ${s.desc ? `<div style="font-size:12px;color:var(--text-sec);">${escapeHtml(s.desc)}</div>` : ""}
@@ -2640,9 +2861,9 @@ function renderMcpPane() {
       scanBox.style.display = "none";
     } else {
       scanBox.style.display = "flex";
-      scanBox.innerHTML = `<div class="insp-card-title">本机 CLI 现有 MCP 列表</div>` + scanKeys.map(cid => {
+      scanBox.innerHTML = `<div class="insp-card-title">${t("本机 CLI 现有 MCP 列表", "Configured MCPs in Local CLIs")}</div>` + scanKeys.map(cid => {
         const item = lastScan[cid] || {};
-        const lines = (item.lines || []).length ? item.lines.map(l => escapeHtml(l)).join("\n") : "(暂无已配置服务)";
+        const lines = (item.lines || []).length ? item.lines.map(l => escapeHtml(l)).join("\n") : t("(暂无已配置服务)", "(No configured servers)");
         return `<div style="font-size:11.5px;"><strong style="color:var(--text);">${escapeHtml(cid.toUpperCase())}</strong><pre style="margin:4px 0 0;padding:7px 9px;border-radius:7px;background:var(--bg-surface);border:1px solid var(--border);font-family:Consolas,monospace;font-size:11px;color:var(--text-sec);white-space:pre-wrap;max-height:110px;overflow:auto;">${lines}</pre></div>`;
       }).join("");
     }
@@ -3111,7 +3332,7 @@ function renderChat(msgs, job) {
         <div>
           <div class="msg-user-wrap"><div class="msg-user">${escapeHtml(m.body)}</div></div>
           ${attHtml}
-          <div class="msg-user-meta"><span>发给 ${escapeHtml(toInfo.name)}</span><span>·</span><span>${ts}</span></div>
+          <div class="msg-user-meta"><span>${t("发给", "To")} ${escapeHtml(toInfo.name)}</span><span>·</span><span>${ts}</span></div>
         </div>`;
     }
     const info = ROLE_INFO[sender] || { name: sender, role: "" };
@@ -3119,21 +3340,21 @@ function renderChat(msgs, job) {
     if (sender === "agy" && !job.running) {
       actions = `
         <div class="handoff-bar">
-          <button class="btn sm solid" onclick="approveAgyPlan(${idx})">采纳方案并交棒 Codex</button>
-          <button class="btn sm" onclick="prefillInput('针对上面的方案，我想微调：')">继续微调</button>
+          <button class="btn sm solid" onclick="approveAgyPlan(${idx})">${t("采纳方案并交棒 Codex", "Approve Plan & Hand Off")}</button>
+          <button class="btn sm" onclick="prefillInput('${t("针对上面的方案，我想微调：", "Regarding the plan above, please adjust: ")}')">${t("继续微调", "Refine")}</button>
         </div>`;
     } else if (sender === "codex" && !job.running) {
       const wsType = latestSnap?.active_workspace?.type || "general";
       actions = wsType === "godot-game"
         ? `<div class="handoff-bar">
-            <button class="btn sm solid" onclick="launchGame()">启动试玩</button>
-            <button class="btn sm" onclick="runSelfCheck()">自检三条</button>
-            <button class="btn sm" onclick="submitVerdict('PASS')">验收通过</button>
-            <button class="btn sm danger" onclick="prefillInput('退回修改原因：')">退回修改</button>
+            <button class="btn sm solid" onclick="launchGame()">${t("启动试玩", "Launch Game")}</button>
+            <button class="btn sm" onclick="runSelfCheck()">${t("自检三条", "Self-Check")}</button>
+            <button class="btn sm" onclick="submitVerdict('PASS')">${t("验收通过", "Approve")}</button>
+            <button class="btn sm danger" onclick="prefillInput('${t("退回修改原因：", "Rework reason: ")}')">${t("退回修改", "Reject")}</button>
           </div>`
         : `<div class="handoff-bar">
-            <button class="btn sm" onclick="toggleInspector(true); switchInspTab('workspace')">查看代码改动</button>
-            <button class="btn sm" onclick="prefillInput('请针对刚才的改动补充修改：')">继续微调</button>
+            <button class="btn sm" onclick="toggleInspector(true); switchInspTab('workspace')">${t("查看代码改动", "View Changes")}</button>
+            <button class="btn sm" onclick="prefillInput('${t("请针对刚才的改动补充修改：", "Please make a follow-up adjustment: ")}')">${t("继续微调", "Follow Up")}</button>
           </div>`;
     }
     return `
@@ -3156,8 +3377,8 @@ function renderChat(msgs, job) {
     memHtml = `
       <details class="memory-banner">
         <summary>
-          <span>已加载本对话压缩记忆（覆盖前 ${activeThread.compacted_count || 0} 条消息）</span>
-          <span style="color:var(--text-muted);font-size:11px;">查看摘要 ▾</span>
+          <span>${t(`已加载本对话压缩记忆（覆盖前 ${activeThread.compacted_count || 0} 条消息）`, `Compacted Session Memory (${activeThread.compacted_count || 0} messages summarized)`)}</span>
+          <span style="color:var(--text-muted);font-size:11px;">${t("查看摘要 ▾", "View Summary ▾")}</span>
         </summary>
         <div class="memory-body">${renderMarkdown(activeThread.summary)}</div>
       </details>`;
@@ -3166,7 +3387,7 @@ function renderChat(msgs, job) {
   if (isJobHere) {
     const ag = job.agent || "agy";
     const info = ROLE_INFO[ag] || { name: ag.toUpperCase(), role: "" };
-    const step = job.current_step_desc || "正在思考与执行…";
+    const step = job.current_step_desc || t("正在思考与执行…", "Thinking & executing…");
     const recentLogs = (job.logs || []).slice(-18).join("\n");
     const traceOpen = window._traceOpen ? "open" : "";
     html += `
@@ -3175,16 +3396,16 @@ function renderChat(msgs, job) {
           <div class="agent-id">
             <i class="pulse-dot"></i>
             <span>${escapeHtml(info.name)}</span>
-            <span class="agent-role">${escapeHtml(info.role)} · 运行中</span>
+            <span class="agent-role">${escapeHtml(info.role)} · ${t("运行中", "Running")}</span>
           </div>
           <span class="agent-time" id="liveElapsed">${job.elapsed_seconds}s</span>
         </div>
         <details class="trace-box" ${traceOpen} ontoggle="window._traceOpen = this.open">
           <summary>
             <span id="liveStepDesc" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(step)}</span>
-            <span style="color:var(--text-muted);font-size:11px;flex-shrink:0;">执行步骤 ▾</span>
+            <span style="color:var(--text-muted);font-size:11px;flex-shrink:0;">${t("执行步骤 ▾", "Steps ▾")}</span>
           </summary>
-          <div class="trace-logs" id="liveTraceLogs">${escapeHtml(recentLogs || "正在初始化进程…")}</div>
+          <div class="trace-logs" id="liveTraceLogs">${escapeHtml(recentLogs || t("正在初始化进程…", "Initializing process…"))}</div>
         </details>
         <div class="agent-body" id="liveReplyBody" style="${job.live_reply ? '' : 'display:none;'}">${job.live_reply ? renderMarkdown(job.live_reply, true) : ""}</div>
       </div>`;
@@ -3209,9 +3430,8 @@ function render(snap, fromMutation = false) {
   if (ver > lastAppliedVersion) lastAppliedVersion = ver;
 
   latestSnap = snap;
-  if (snap.settings?.lang && snap.settings.lang !== currentLang) {
-    currentLang = snap.settings.lang;
-    applyLang(currentLang);
+  if (!localStorage.getItem("sw_lang") && snap.settings?.lang && snap.settings.lang !== currentLang) {
+    applyLang(snap.settings.lang);
     return;
   }
   const st = snap.state || {};
@@ -3239,7 +3459,7 @@ function render(snap, fromMutation = false) {
         <div class="thread-tree">
           ${wsThreads.map(tItem => `
             <div class="thread-item ${tItem.id === activeThread.id ? 'active' : ''}" data-thread-id="${escapeHtml(tItem.id)}" onclick="switchThread('${escapeHtml(tItem.id)}')">
-              <span class="thread-title">${escapeHtml(tItem.title || t('新对话', 'New Thread'))}</span>
+              <span class="thread-title">${escapeHtml(fmtThreadTitle(tItem.title))}</span>
               <div class="thread-acts" onclick="event.stopPropagation()">
                 <button class="ws-act-btn" style="width:20px;height:20px;" title="${t('重命名对话', 'Rename Thread')}" onclick="renameThreadPrompt('${escapeHtml(tItem.id)}')">
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
@@ -3265,11 +3485,11 @@ function render(snap, fromMutation = false) {
               <div class="ws-path">${escapeHtml(w.path)}</div>
             </div>
             <div class="ws-actions" onclick="event.stopPropagation()">
-              <button class="ws-act-btn" title="重命名 / 编辑路径" onclick="openRenameModal('${escapeHtml(w.id)}')">
+              <button class="ws-act-btn" title="${t('重命名 / 编辑路径', 'Rename / Edit Path')}" onclick="openRenameModal('${escapeHtml(w.id)}')">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
               </button>
               ${items.length > 1 ? `
-              <button class="ws-act-btn del" title="从工作台移除空间" onclick="openDelModal('${escapeHtml(w.id)}')">
+              <button class="ws-act-btn del" title="${t('从工作台移除空间', 'Remove Workspace')}" onclick="openDelModal('${escapeHtml(w.id)}')">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
               </button>` : ""}
             </div>
@@ -3279,16 +3499,17 @@ function render(snap, fromMutation = false) {
     }).join("");
   }
   const tCrumb = document.getElementById("threadCrumb");
-  if (tCrumb) tCrumb.textContent = activeThread.title || "主对话";
+  if (tCrumb) tCrumb.textContent = fmtThreadTitle(activeThread.title);
 
   // Dynamic User Display Name (De-personalized, customizable in Settings)
-  const userName = (snap.settings?.user_name || "我").trim() || "我";
+  const rawUName = (snap.settings?.user_name || "我").trim() || "我";
+  const userName = (rawUName === "我" && currentLang === "en") ? "Me" : rawUName;
   const userShort = /^[\x00-\x7F]+$/.test(userName) ? userName.slice(0, 3) : userName.slice(0, 2);
-  ROLE_INFO.xiu = { name: userName, role: "发起人" };
+  ROLE_INFO.xiu = { name: userName, role: t("发起人", "Producer") };
   const rTxtXiu = document.getElementById("rtxt-xiu");
   if (rTxtXiu) rTxtXiu.textContent = userShort;
   const rTitleXiu = document.getElementById("rtitle-xiu");
-  if (rTitleXiu) rTitleXiu.textContent = `${userName} · 发起人 / 终审`;
+  if (rTitleXiu) rTitleXiu.textContent = `${userName} · ${t("发起人 / 终审", "Producer / Review")}`;
 
   // Dynamic Role Slots & Engine Badges
   const roles = snap.roles || {};
@@ -3431,7 +3652,7 @@ function render(snap, fromMutation = false) {
   // Inspector: Gates & Files
   const tel = snap.telemetry || {};
   const age = tel.last_age_seconds ?? 99999;
-  document.getElementById("liveDiskAge").textContent = age < 60 ? `${age}s 前更新` : (age < 3600 ? `${Math.floor(age/60)}m 前更新` : "");
+  document.getElementById("liveDiskAge").textContent = age < 60 ? `${age}s ${t("前更新", "ago")}` : (age < 3600 ? `${Math.floor(age/60)}m ${t("前更新", "ago")}` : "");
 
   const rms = snap.rounds_metrics || [];
   const measured = rms.filter(x => x.fps != null || x.report_exists);
@@ -3443,10 +3664,10 @@ function render(snap, fromMutation = false) {
     const latOk = (latestM.input_latency_ms ?? 999) < 100;
     const ac = snap.asset_contract || {};
     const rows = [
-      [`R${latestM.round ?? '—'} 桌面帧率`, latestM.fps != null ? `${latestM.fps} FPS` : "未测", fpsOk],
-      ["输入响应延迟", latestM.input_latency_ms != null ? `${latestM.input_latency_ms} ms` : "未测", latOk],
-      ["提交前自检三条", scOk ? "通过" : "待检", scOk],
-      ["资产契约", ac.status || "待检", ac.status === "PASS"]
+      [`R${latestM.round ?? '—'} ${t("桌面帧率", "Desktop FPS")}`, latestM.fps != null ? `${latestM.fps} FPS` : t("未测", "N/A"), fpsOk],
+      [t("输入响应延迟", "Input Latency"), latestM.input_latency_ms != null ? `${latestM.input_latency_ms} ms` : t("未测", "N/A"), latOk],
+      [t("提交前自检三条", "Pre-Submit 3 Gates"), scOk ? t("通过", "PASS") : t("待检", "PENDING"), scOk],
+      [t("资产契约", "Asset Contract"), ac.status || t("待检", "PENDING"), ac.status === "PASS"]
     ];
     document.getElementById("gatesList").innerHTML = rows.map(([k, v, ok]) =>
       `<div class="gate-row"><span style="color:var(--text-sec)">${k}</span><span style="display:inline-flex;align-items:center;gap:6px;font-family:Consolas,monospace;font-size:12px;">${v}<i class="s-dot ${ok ? 'on' : ''}"></i></span></div>`
@@ -3455,7 +3676,7 @@ function render(snap, fromMutation = false) {
 
   document.getElementById("milestonesCard").style.display = ((isGame || isAigc) && (tel.milestones || []).length) ? "flex" : "none";
   const msTitle = document.getElementById("milestonesTitle");
-  if (msTitle) msTitle.textContent = isAigc ? "AIGC 五阶段制片进度" : "本轮进度里程碑";
+  if (msTitle) msTitle.textContent = isAigc ? t("AIGC 五阶段制片进度", "AIGC 5-Stage Milestones") : t("本轮进度里程碑", "Round Milestones");
   document.getElementById("milestonesRow").innerHTML = (tel.milestones || []).map(m =>
     `<span class="ms-chip ${m.done ? 'done' : ''}">${m.done ? '✓ ' : ''}${escapeHtml(m.label)}</span>`
   ).join("");
@@ -3465,9 +3686,9 @@ function render(snap, fromMutation = false) {
   const gitCard = document.getElementById("gitCard");
   if (git.is_repo && (git.files || []).length) {
     gitCard.style.display = "flex";
-    document.getElementById("gitBranchTag").textContent = git.branch ? `分支: ${git.branch}` : "";
+    document.getElementById("gitBranchTag").textContent = git.branch ? `${t("分支", "Branch")}: ${git.branch}` : "";
     const btnCommit = document.getElementById("btnGitCommit");
-    if (btnCommit && !btnCommit.disabled) btnCommit.textContent = `提交 ${git.files.length} 个改动`;
+    if (btnCommit && !btnCommit.disabled) btnCommit.textContent = t(`提交 ${git.files.length} 个改动`, `Commit ${git.files.length} Changes`);
     document.getElementById("gitFilesBox").innerHTML = git.files.slice(0, 14).map(g => {
       const code = (g.status || "M")[0];
       const badgeCls = code === "?" ? "U" : code;
@@ -3479,7 +3700,7 @@ function render(snap, fromMutation = false) {
 
   document.getElementById("recentFilesBox").innerHTML = (tel.recent_files || []).slice(0, 10).map(f =>
     `<div class="file-item clickable" onclick="inspectFileDiff('${escapeHtml(f.file)}')"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(f.file)}</span><span style="color:var(--text-muted);flex-shrink:0;">${f.mtime_str}</span></div>`
-  ).join("") || `<div style="font-size:12px;color:var(--text-muted);">暂无最近修改文件</div>`;
+  ).join("") || `<div style="font-size:12px;color:var(--text-muted);">${t("暂无最近修改文件", "No recently modified files")}</div>`;
 
   // Inspector: AIGC Screening Room (Video + Audio + Storyboard Gallery)
   const aigc = snap.aigc || {};
