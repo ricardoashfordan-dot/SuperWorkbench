@@ -65,7 +65,7 @@ cd SuperWorkbench
 python start.py
 ```
 
-Windows 用户也可以直接双击根目录下的 `Start-SuperWorkbench.cmd`。
+Windows 用户可直接双击 `Start-SuperWorkbench.cmd`，macOS / Linux 用户可执行 `./start.sh`。
 
 启动后浏览器访问 **`http://127.0.0.1:8765`**（默认仅监听本机回环地址）。
 

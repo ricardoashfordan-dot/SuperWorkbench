@@ -1571,19 +1571,30 @@
       <div class="settings-pane" id="pane-general" style="display:none;">
         <div class="insp-card" style="flex-direction:row;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
           <div style="min-width:0;">
-            <div style="font-size:13px;font-weight:550;color:var(--text);">自定义称呼</div>
-            <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">用于全新对话问候语、右侧微轨与任务交接记录。</div>
+            <div style="font-size:13px;font-weight:550;color:var(--text);" id="lblPrefNameTitle">自定义称呼</div>
+            <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;" id="lblPrefNameDesc">用于全新对话问候语、右侧微轨与任务交接记录。</div>
           </div>
           <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
             <input id="inputUserName" maxlength="16" placeholder="例如：修 / Ricardo" onkeydown="if(event.key==='Enter') saveUserName(this.value)" style="width:140px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:12.5px;" />
-            <button class="btn sm solid" onclick="saveUserName(document.getElementById('inputUserName').value)">保存</button>
+            <button class="btn sm solid" id="btnSaveUserName" onclick="saveUserName(document.getElementById('inputUserName').value)">保存</button>
           </div>
         </div>
 
         <div class="insp-card" style="flex-direction:row;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
           <div style="min-width:0;">
-            <div style="font-size:13px;font-weight:550;color:var(--text);">外观风格</div>
-            <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">在暗夜（Obsidian）与纸白（Muse）双主题间自由切换。</div>
+            <div style="font-size:13px;font-weight:550;color:var(--text);" id="lblPrefLangTitle">界面语言</div>
+            <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;" id="lblPrefLangDesc">在简体中文与 English 界面之间即时切换。</div>
+          </div>
+          <div style="display:flex;gap:5px;flex-shrink:0;">
+            <button class="btn sm" id="langOptZh" onclick="setLanguage('zh')">简体中文</button>
+            <button class="btn sm" id="langOptEn" onclick="setLanguage('en')">English</button>
+          </div>
+        </div>
+
+        <div class="insp-card" style="flex-direction:row;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+          <div style="min-width:0;">
+            <div style="font-size:13px;font-weight:550;color:var(--text);" id="lblPrefThemeTitle">外观风格</div>
+            <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;" id="lblPrefThemeDesc">在暗夜（Obsidian）与纸白（Muse）双主题间自由切换。</div>
           </div>
           <div style="display:flex;gap:5px;flex-shrink:0;">
             <button class="btn sm" id="themeOptDark" onclick="applyTheme('dark')">暗夜深色</button>
@@ -1593,8 +1604,8 @@
 
         <div class="insp-card" style="flex-direction:row;align-items:center;justify-content:space-between;gap:12px;">
           <div style="min-width:0;">
-            <div style="font-size:13px;font-weight:550;color:var(--text);">自动流水线 · 执行前暂停审批</div>
-            <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">开启后，「全自动流转」会在策划输出方案后暂停，等你点一下批准再动手改文件。</div>
+            <div style="font-size:13px;font-weight:550;color:var(--text);" id="lblPrefGateTitle">自动流水线 · 执行前暂停审批</div>
+            <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;" id="lblPrefGateDesc">开启后，「全自动流转」会在策划输出方案后暂停，等你点一下批准再动手改文件。</div>
           </div>
           <label style="display:flex;align-items:center;cursor:pointer;flex-shrink:0;">
             <input type="checkbox" id="toggleApproveGate" onchange="toggleApproveBeforeBuild(this.checked)" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" />
@@ -1958,18 +1969,122 @@ function closeGuideModal() { document.getElementById("guideModal").classList.rem
 
 let currentSkillFilter = "all";
 let attachedSkillIds = [];
+let currentLang = localStorage.getItem("sw_lang") || "zh";
 
-const SETTINGS_META = {
-  general: ["通用偏好", "自定义称呼、问候语与工作流交互偏好"],
-  skills: ["技能 Skills", "一处安装，所有本地 CLI 与纯 API 模型共享生效"],
-  roles: ["角色与引擎绑定", "自由为策划 / 执行 / 质检三个岗位分配底层引擎"],
-  engines: ["引擎与 API 库", "管理本机已检测 CLI，或接入免费本地 Ollama 与云端 API"],
-  mcp: ["外部工具 MCP", "给 AI 接上浏览器、Figma、数据库与 ComfyUI 等外部工具"],
-  plugins: ["工作流插件 Plugins", "按工作空间隔离的行业抽屉面板、门禁与套装"]
-};
+function t(zh, en) {
+  return currentLang === "en" ? en : zh;
+}
+
+const STATIC_I18N = [
+  [".sb-sec-head > span", "工作空间", "Workspaces"],
+  ["#modelPopover .pop-title > span", "快速切换模型", "Quick Model Switch"],
+  [".engine-trigger span", "模型与引擎", "Models & Engines"],
+  ["#btnCompact span", "压缩上下文", "Compact"],
+  ["#approvalBar .approval-info span:last-child", "方案已就绪，确认后交棒执行（可在下方输入框补充说明）", "Plan ready — confirm to hand off to Builder (optional notes below)"],
+  ["#approvalBar .btn:first-child", "取消", "Cancel"],
+  ["#approvalBar .btn.solid", "批准执行", "Approve & Build"],
+  ["#plusMenu .plus-item:nth-child(1) span", "添加图片 / 截图", "Add Image / Screenshot"],
+  ["#plusMenu .plus-item:nth-child(2) span", "添加本地文件 / 附件", "Add Local File"],
+  ["#plusMenu .plus-item:nth-child(3) span", "挂载技能 (/ Skill)", "Mount Skill (/ Skill)"],
+  [".insp-tab[data-tab='console']", "终端日志", "Console"],
+  [".insp-tab[data-tab='workspace']", "改动与文件", "Changes & Files"],
+  [".insp-tab[data-tab='artifacts']", "审片与预览", "Preview & Media"],
+  ["#gitCard .insp-card-title > span:first-child", "Git 代码改动", "Git Changes"],
+  ["#btnGitDraft > span", "AI 起草", "AI Draft"],
+  ["#snav-general .snav-title", "通用偏好", "General"],
+  ["#snav-skills .snav-title", "技能 Skills", "Skills"],
+  ["#snav-roles .snav-title", "角色与引擎", "Roles & Engines"],
+  ["#snav-engines .snav-title", "引擎与 API", "Engines & API"],
+  ["#snav-mcp .snav-title", "外部工具 MCP", "MCP Tools"],
+  ["#snav-plugins .snav-title", "工作流插件", "Plugins"],
+  ["#lblPrefNameTitle", "自定义称呼", "Display Name"],
+  ["#lblPrefNameDesc", "用于全新对话问候语、右侧微轨与任务交接记录。", "Shown in new-thread greetings, relay rail, and task logs."],
+  ["#btnSaveUserName", "保存", "Save"],
+  ["#lblPrefLangTitle", "界面语言", "Interface Language"],
+  ["#lblPrefLangDesc", "在简体中文与 English 界面之间即时切换。", "Switch between Simplified Chinese and English instantly."],
+  ["#lblPrefThemeTitle", "外观风格", "Appearance"],
+  ["#lblPrefThemeDesc", "在暗夜（Obsidian）与纸白（Muse）双主题间自由切换。", "Switch between Obsidian Dark and Muse Light themes."],
+  ["#themeOptDark", "暗夜深色", "Obsidian Dark"],
+  ["#themeOptLight", "纸白浅色", "Muse Light"],
+  ["#lblPrefGateTitle", "自动流水线 · 执行前暂停审批", "Auto Pipeline · Pause Before Build"],
+  ["#lblPrefGateDesc", "开启后，「全自动流转」会在策划输出方案后暂停，等你点一下批准再动手改文件。", "When enabled, Auto Pipeline pauses after Planner outputs a plan and waits for your approval."]
+];
+
+function applyLang(lang) {
+  currentLang = lang === "en" ? "en" : "zh";
+  localStorage.setItem("sw_lang", currentLang);
+  document.documentElement.lang = currentLang === "en" ? "en" : "zh-CN";
+  document.getElementById("langOptZh")?.classList.toggle("solid", currentLang === "zh");
+  document.getElementById("langOptEn")?.classList.toggle("solid", currentLang === "en");
+
+  for (const [sel, zh, en] of STATIC_I18N) {
+    const el = document.querySelector(sel);
+    if (el) el.textContent = currentLang === "en" ? en : zh;
+  }
+
+  const pipeBtn = document.querySelector(".mode-pill[data-mode='pipeline']");
+  if (pipeBtn && pipeBtn.lastChild) {
+    pipeBtn.lastChild.textContent = " " + t("全自动流转", "Auto Pipeline");
+  }
+  const cmdEl = document.getElementById("cmdInput");
+  if (cmdEl) {
+    cmdEl.placeholder = t(
+      "输入想法或指令… 支持点 + 添加图片/附件/技能，直接粘贴截图，或 Ctrl+Enter 发送",
+      "Ask or build anything… Click + for images/files/skills, paste screenshots, or Ctrl+Enter to send"
+    );
+  }
+  const gitBox = document.getElementById("gitCommitMsg");
+  if (gitBox) {
+    gitBox.placeholder = t(
+      "提交信息… 可点「AI 起草」根据改动自动生成",
+      "Commit message… Click 'AI Draft' to generate from current diff"
+    );
+  }
+  const uInput = document.getElementById("inputUserName");
+  if (uInput) {
+    uInput.placeholder = t("例如：修 / Ricardo", "e.g. Ricardo / Alex");
+  }
+
+  lastChatSig = "";
+  lastWsSig = "";
+  if (latestSnap) {
+    render(latestSnap, true);
+    renderStudioModal();
+    renderSkillsPane();
+  }
+}
+
+async function setLanguage(lang) {
+  const next = lang === "en" ? "en" : "zh";
+  applyLang(next);
+  try {
+    const res = await api("/api/settings", { lang: next });
+    latestSnap = res.snapshot;
+    render(res.snapshot, true);
+    showToast(next === "en" ? "Switched to English" : "已切换为简体中文");
+  } catch (e) { showToast(e.message); }
+}
+
+function getSettingsTitle(tab) {
+  const map = {
+    general: t("通用偏好", "General Preferences"),
+    skills: t("技能 Skills", "Skills"),
+    roles: t("角色与引擎绑定", "Roles & Engine Bindings"),
+    engines: t("引擎与 API 库", "Engines & APIs"),
+    mcp: t("外部工具 MCP", "MCP External Tools"),
+    plugins: t("工作流插件 Plugins", "Workflow Plugins")
+  };
+  return map[tab] || map.general;
+}
 
 function getTimePeriodLabel() {
   const h = new Date().getHours();
+  if (currentLang === "en") {
+    if (h >= 5 && h < 12) return "Good morning";
+    if (h >= 12 && h < 18) return "Good afternoon";
+    if (h >= 18 && h < 24) return "Good evening";
+    return "Working late";
+  }
   if (h >= 5 && h < 12) return "早上好";
   if (h >= 12 && h < 14) return "中午好";
   if (h >= 14 && h < 18) return "下午好";
@@ -1980,7 +2095,10 @@ function getTimePeriodLabel() {
 function getGreetingLine(userName) {
   const period = getTimePeriodLabel();
   const clean = String(userName || "").trim();
-  const hasCustom = clean && clean !== "我";
+  const hasCustom = clean && clean !== "我" && clean.toLowerCase() !== "me";
+  if (currentLang === "en") {
+    return hasCustom ? `${period}, ${clean}. Where shall we start today?` : `${period}. Where shall we start today?`;
+  }
   return hasCustom ? `${period}，${clean}，今天想从哪里开始？` : `${period}，今天想从哪里开始？`;
 }
 
@@ -2000,8 +2118,7 @@ function switchStudioTab(tab) {
     const pane = document.getElementById("pane-" + k);
     if (pane) pane.style.display = k === tab ? "flex" : "none";
   });
-  const [title] = SETTINGS_META[tab] || SETTINGS_META.skills;
-  document.getElementById("settingsPaneTitle").textContent = title;
+  document.getElementById("settingsPaneTitle").textContent = getSettingsTitle(tab);
   if (tab === "skills") renderSkillsPane();
 }
 
@@ -2355,6 +2472,8 @@ function renderStudioModal() {
   const curTheme = document.documentElement.getAttribute("data-theme") || "dark";
   document.getElementById("themeOptDark")?.classList.toggle("solid", curTheme === "dark");
   document.getElementById("themeOptLight")?.classList.toggle("solid", curTheme === "light");
+  document.getElementById("langOptZh")?.classList.toggle("solid", currentLang === "zh");
+  document.getElementById("langOptEn")?.classList.toggle("solid", currentLang === "en");
 
   renderMcpPane();
 }
@@ -2882,6 +3001,7 @@ function renderChat(msgs, job) {
   const curUName = latestSnap?.settings?.user_name || "我";
   const sig = JSON.stringify({
     tid: activeThread.id || "",
+    lang: currentLang,
     uname: curUName,
     period: getTimePeriodLabel(),
     sumLen: (activeThread.summary || "").length,
@@ -2903,7 +3023,7 @@ function renderChat(msgs, job) {
   window._recentMsgs = recent;
 
   if (!recent.length && !isJobHere) {
-    const wsName = latestSnap?.active_workspace?.name || "当前空间";
+    const wsName = latestSnap?.active_workspace?.name || t("当前空间", "Workspace");
     const wsType = latestSnap?.active_workspace?.type || "general";
     const isAigc = wsType === "aigc-studio";
     const isGame = wsType === "godot-game";
@@ -2918,37 +3038,37 @@ function renderChat(msgs, job) {
     const envHtml = readyEngines.length
       ? `<div class="onboard-env">
           ${readyEngines.slice(0, 4).map(e => `<span class="env-pill"><i class="s-dot on"></i><span>${escapeHtml(e.name)}</span></span>`).join('<span class="env-sep">·</span>')}
-          ${hasUnreadyRole ? `<span class="env-sep">|</span><button class="onboard-link" style="color:var(--c-agy);font-weight:550;" onclick="autoRecommendRoles(true)">一键匹配最佳角色</button>` : ""}
+          ${hasUnreadyRole ? `<span class="env-sep">|</span><button class="onboard-link" style="color:var(--c-agy);font-weight:550;" onclick="autoRecommendRoles(true)">${t("一键匹配最佳角色", "Auto-Bind Best Roles")}</button>` : ""}
         </div>`
       : `<div class="onboard-env" style="border-color:rgba(245,158,11,0.35);">
-          <span class="env-pill"><i class="s-dot off" style="background:var(--c-warn);"></i><span>尚未检测到本地 CLI</span></span>
+          <span class="env-pill"><i class="s-dot off" style="background:var(--c-warn);"></i><span>${t("尚未检测到本地 CLI", "No local CLI detected")}</span></span>
           <span class="env-sep">·</span>
-          <button class="onboard-link" style="color:var(--c-warn);font-weight:550;" onclick="openStudioModal('engines')">10 秒接入 Ollama 或云端 API →</button>
+          <button class="onboard-link" style="color:var(--c-warn);font-weight:550;" onclick="openStudioModal('engines')">${t("10 秒接入 Ollama 或云端 API →", "Connect Ollama or Cloud API in 10s →")}</button>
         </div>`;
 
     const starters = isAigc
       ? [
-          { mode: "agy", tag: "编剧 · 策划", title: "生成 60 秒漫剧脚本", desc: "输出强悬念钩子与 8 个连贯分镜画面描述", prompt: "帮我构思一个 60 秒赛博朋克漫剧第 1 集脚本，要求前 3 秒有强悬念钩子，并输出 Markdown 分镜表（镜号、景别、台词、生图提示词）。" },
-          { mode: "codex", tag: "制片 · 执行", title: "搭建资产与粗剪脚本", desc: "把分镜结构化为 JSON 并生成本地自动化脚本", prompt: "请帮我把当前空间的分镜规划整理成结构化 JSON 存入 02_storyboard/，并创建一个基础的 Python 音画合成脚本框架。" },
-          { mode: "pipeline", tag: "全自动流水线", title: "编剧 → 制片 → 审片", desc: "端到端自动出方案、落地文件并做合规审片", prompt: "请在本制片空间内规划一套短片分镜目录规范模板，自动创建示例脚本与分镜清单，并做一次一致性审查。" }
+          { mode: "agy", tag: t("编剧 · 策划", "Script · Plan"), title: t("生成 60 秒漫剧脚本", "Draft a 60s Short Script"), desc: t("输出强悬念钩子与 8 个连贯分镜画面描述", "Strong 3s hook with an 8-shot storyboard table"), prompt: t("帮我构思一个 60 秒赛博朋克漫剧第 1 集脚本，要求前 3 秒有强悬念钩子，并输出 Markdown 分镜表（镜号、景别、台词、生图提示词）。", "Draft Episode 1 of a 60s cyberpunk short drama with a strong 3s hook and a Markdown storyboard table (Shot, Framing, Dialogue, Image Prompt).") },
+          { mode: "codex", tag: t("制片 · 执行", "Produce · Build"), title: t("搭建资产与粗剪脚本", "Build Storyboard JSON & Edit Script"), desc: t("把分镜结构化为 JSON 并生成本地自动化脚本", "Structure shots into JSON and scaffold an assembly script"), prompt: t("请帮我把当前空间的分镜规划整理成结构化 JSON 存入 02_storyboard/，并创建一个基础的 Python 音画合成脚本框架。", "Organize our storyboard plan into structured JSON under 02_storyboard/ and scaffold a Python audio/video assembly script.") },
+          { mode: "pipeline", tag: t("全自动流水线", "Auto Pipeline"), title: t("编剧 → 制片 → 审片", "Script → Produce → Review"), desc: t("端到端自动出方案、落地文件并做合规审片", "End-to-end planning, file generation, and consistency review"), prompt: t("请在本制片空间内规划一套短片分镜目录规范模板，自动创建示例脚本与分镜清单，并做一次一致性审查。", "Design a storyboard specification template for this studio, create sample script & shot files, and run a consistency review.") }
         ]
       : isGame
       ? [
-          { mode: "agy", tag: "策划 · 架构", title: "梳理玩法与数值平衡", desc: "快速分析核心循环、手感指标与下轮优化点", prompt: "请梳理当前游戏项目的核心战斗循环与最新一轮的优化重点，给出按优先级排序的 3 个改进方案。" },
-          { mode: "codex", tag: "主程 · 执行", title: "排查报错并跑通自检", desc: "直接检查脚本警告、修复问题并执行无头验证", prompt: "检查当前游戏工程脚本中是否存在潜在报错或性能隐患，直接修复并运行一次无头快速验证。" },
-          { mode: "pipeline", tag: "全自动流水线", title: "策划 → 编码 → 门禁核验", desc: "自动出方案、写代码并跑完客观硬指标自检", prompt: "请设计并实现一个小幅手感反馈增强（如受击顿帧或音效层次优化），完成后自动跑通自检门禁并汇报结果。" }
+          { mode: "agy", tag: t("策划 · 架构", "Design · Plan"), title: t("梳理玩法与数值平衡", "Analyze Core Loop & Balance"), desc: t("快速分析核心循环、手感指标与下轮优化点", "Review combat loop, game feel metrics, and next priorities"), prompt: t("请梳理当前游戏项目的核心战斗循环与最新一轮的优化重点，给出按优先级排序的 3 个改进方案。", "Analyze the core gameplay loop of this project and propose the top 3 prioritized improvements.") },
+          { mode: "codex", tag: t("主程 · 执行", "Engine · Build"), title: t("排查报错并跑通自检", "Inspect Scripts & Run Self-Check"), desc: t("直接检查脚本警告、修复问题并执行无头验证", "Fix script warnings or hazards and run headless verification"), prompt: t("检查当前游戏工程脚本中是否存在潜在报错或性能隐患，直接修复并运行一次无头快速验证。", "Inspect project scripts for errors or performance issues, fix them, and run headless verification.") },
+          { mode: "pipeline", tag: t("全自动流水线", "Auto Pipeline"), title: t("策划 → 编码 → 门禁核验", "Plan → Code → Gate Verify"), desc: t("自动出方案、写代码并跑完客观硬指标自检", "Auto-plan, implement in workspace, and verify gates"), prompt: t("请设计并实现一个小幅手感反馈增强（如受击顿帧或音效层次优化），完成后自动跑通自检门禁并汇报结果。", "Design and implement a clean game-feel polish, then run the self-check gates and report results.") }
         ]
       : [
-          { mode: "agy", tag: "策划 · 架构", title: "读懂当前项目架构", desc: "快速梳理目录结构、关键模块与 3 个高价值优化点", prompt: "帮我梳理当前工作空间的整体架构与核心文件职责，并给出接下来最值得优先优化的 3 个建议。" },
-          { mode: "codex", tag: "执行 · 主程", title: "代码体检与快速修复", desc: "排查潜在 Bug、性能隐患并直接落地修复验证", prompt: "请检查当前空间代码中是否存在潜在 Bug 或可改进之处，先简要列出发现，再直接完成安全修复并验证。" },
-          { mode: "pipeline", tag: "全自动流水线", title: "方案 → 落地 → 独立审查", desc: "一条指令串联三位智能体，完整闭环交付", prompt: "请先为当前项目构思一个实用且轻量的功能改进方案，再直接落地实现，最后做一次独立代码审查与风险总结。" }
+          { mode: "agy", tag: t("策划 · 架构", "Architecture · Plan"), title: t("读懂当前项目架构", "Explore Project Architecture"), desc: t("快速梳理目录结构、关键模块与 3 个高价值优化点", "Summarize directory structure, key modules, and top 3 improvements"), prompt: t("帮我梳理当前工作空间的整体架构与核心文件职责，并给出接下来最值得优先优化的 3 个建议。", "Summarize the overall architecture and core module responsibilities of this workspace, and suggest the top 3 improvements.") },
+          { mode: "codex", tag: t("执行 · 主程", "Builder · Code"), title: t("代码体检与快速修复", "Code Health Check & Fix"), desc: t("排查潜在 Bug、性能隐患并直接落地修复验证", "Spot potential bugs or edge cases, fix them, and verify"), prompt: t("请检查当前空间代码中是否存在潜在 Bug 或可改进之处，先简要列出发现，再直接完成安全修复并验证。", "Inspect this workspace for potential bugs or improvements, list your findings briefly, and apply safe fixes with verification.") },
+          { mode: "pipeline", tag: t("全自动流水线", "Auto Pipeline"), title: t("方案 → 落地 → 独立审查", "Plan → Build → Independent Review"), desc: t("一条指令串联三位智能体，完整闭环交付", "Chain all three agents end-to-end with one instruction"), prompt: t("请先为当前项目构思一个实用且轻量的功能改进方案，再直接落地实现，最后做一次独立代码审查与风险总结。", "Propose a practical, lightweight improvement for this project, implement it directly, and finish with an independent code review.") }
         ];
 
     window._starterPrompts = starters;
     const greetingTitle = getGreetingLine(curUName);
     container.innerHTML = `
       <div class="empty-state" style="max-width:660px;margin-top:7vh;">
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">当前空间 · ${escapeHtml(wsName)}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">${t("当前空间", "Workspace")} · ${escapeHtml(wsName)}</div>
         <h3 style="font-size:23px;font-weight:600;letter-spacing:-0.02em;margin-bottom:14px;">${escapeHtml(greetingTitle)}</h3>
         ${envHtml}
         <div class="starter-grid">
@@ -2960,15 +3080,15 @@ function renderChat(msgs, job) {
             </div>`).join("")}
         </div>
         <div class="onboard-links">
-          <button class="onboard-link" onclick="openStudioModal('general')">通用偏好</button>
+          <button class="onboard-link" onclick="openStudioModal('general')">${t("通用偏好", "General")}</button>
           <span>·</span>
-          <button class="onboard-link" onclick="openStudioModal('roles')">角色与引擎</button>
+          <button class="onboard-link" onclick="openStudioModal('roles')">${t("角色与引擎", "Roles & Engines")}</button>
           <span>·</span>
-          <button class="onboard-link" onclick="openStudioModal('skills')">技能 Skills</button>
+          <button class="onboard-link" onclick="openStudioModal('skills')">${t("技能 Skills", "Skills")}</button>
           <span>·</span>
-          <button class="onboard-link" onclick="openStudioModal('mcp')">外部工具 MCP</button>
+          <button class="onboard-link" onclick="openStudioModal('mcp')">${t("外部工具 MCP", "MCP Tools")}</button>
           <span>·</span>
-          <button class="onboard-link" onclick="openGuideModal()">30 秒上手指南</button>
+          <button class="onboard-link" onclick="openGuideModal()">${t("30 秒上手指南", "Quick Guide")}</button>
         </div>
       </div>`;
     return;
@@ -3089,6 +3209,11 @@ function render(snap, fromMutation = false) {
   if (ver > lastAppliedVersion) lastAppliedVersion = ver;
 
   latestSnap = snap;
+  if (snap.settings?.lang && snap.settings.lang !== currentLang) {
+    currentLang = snap.settings.lang;
+    applyLang(currentLang);
+    return;
+  }
   const st = snap.state || {};
   const wsData = snap.workspaces || {};
   const activeWs = snap.active_workspace || {};
@@ -3100,6 +3225,7 @@ function render(snap, fromMutation = false) {
 
   // Sidebar Workspaces + Nested Threads under Active Workspace (DOM diff-guarded!)
   const wsSig = JSON.stringify({
+    lang: currentLang,
     a: activeWs.id,
     t: activeThread.id,
     th: wsThreads.map(t => [t.id, t.title]),
@@ -3111,22 +3237,22 @@ function render(snap, fromMutation = false) {
       const isCur = w.id === activeWs.id;
       const threadTreeHtml = isCur ? `
         <div class="thread-tree">
-          ${wsThreads.map(t => `
-            <div class="thread-item ${t.id === activeThread.id ? 'active' : ''}" data-thread-id="${escapeHtml(t.id)}" onclick="switchThread('${escapeHtml(t.id)}')">
-              <span class="thread-title">${escapeHtml(t.title || '新对话')}</span>
+          ${wsThreads.map(tItem => `
+            <div class="thread-item ${tItem.id === activeThread.id ? 'active' : ''}" data-thread-id="${escapeHtml(tItem.id)}" onclick="switchThread('${escapeHtml(tItem.id)}')">
+              <span class="thread-title">${escapeHtml(tItem.title || t('新对话', 'New Thread'))}</span>
               <div class="thread-acts" onclick="event.stopPropagation()">
-                <button class="ws-act-btn" style="width:20px;height:20px;" title="重命名对话" onclick="renameThreadPrompt('${escapeHtml(t.id)}')">
+                <button class="ws-act-btn" style="width:20px;height:20px;" title="${t('重命名对话', 'Rename Thread')}" onclick="renameThreadPrompt('${escapeHtml(tItem.id)}')">
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
                 </button>
                 ${wsThreads.length > 1 ? `
-                <button class="ws-act-btn del" style="width:20px;height:20px;" title="删除对话" onclick="deleteThreadConfirm('${escapeHtml(t.id)}')">
+                <button class="ws-act-btn del" style="width:20px;height:20px;" title="${t('删除对话', 'Delete Thread')}" onclick="deleteThreadConfirm('${escapeHtml(tItem.id)}')">
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg>
                 </button>` : ""}
               </div>
             </div>`).join("")}
           <button class="thread-new-btn" onclick="createNewThread()">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-            <span>新对话</span>
+            <span>${t("新对话", "New Thread")}</span>
           </button>
         </div>` : "";
 
@@ -3180,8 +3306,8 @@ function render(snap, fromMutation = false) {
 
     const nodeId = slotToNode[slotId];
     const roleShort = isAigc
-      ? (slotId === "planner" ? "编剧" : slotId === "builder" ? "制片" : "审片")
-      : (slotId === "planner" ? "策划" : slotId === "builder" ? "执行" : "质检");
+      ? (slotId === "planner" ? t("编剧", "Script") : slotId === "builder" ? t("制片", "Produce") : t("审片", "Review"))
+      : (slotId === "planner" ? t("策划", "Plan") : slotId === "builder" ? t("执行", "Build") : t("质检", "Review"));
 
     const pLbl = document.getElementById("pill-label-" + nodeId);
     if (pLbl) pLbl.textContent = `${roleShort} · ${eng.short}`;
@@ -3205,8 +3331,8 @@ function render(snap, fromMutation = false) {
   const bEng = engMap[bRole.engine] || {};
   const qPLbl = document.getElementById("quickPlannerLabel");
   const qBLbl = document.getElementById("quickBuilderLabel");
-  if (qPLbl) qPLbl.textContent = `策划模型 (${pEng.name || pRole.engine || 'AGY'})`;
-  if (qBLbl) qBLbl.textContent = `执行模型 (${bEng.name || bRole.engine || 'Codex'})`;
+  if (qPLbl) qPLbl.textContent = `${t("策划模型", "Planner Model")} (${pEng.name || pRole.engine || 'AGY'})`;
+  if (qBLbl) qBLbl.textContent = `${t("执行模型", "Builder Model")} (${bEng.name || bRole.engine || 'Codex'})`;
 
   const fillQuickSelect = (selId, eng, curVal) => {
     const sel = document.getElementById(selId);
@@ -3233,12 +3359,12 @@ function render(snap, fromMutation = false) {
   const skillsList = snap.skills || [];
   const activeSkillsCount = skillsList.filter(s => s.active).length;
   const chipTxt = document.getElementById("activeSkillChipText");
-  if (chipTxt) chipTxt.textContent = activeSkillsCount > 0 ? `技能 (${activeSkillsCount})` : "技能";
+  if (chipTxt) chipTxt.textContent = activeSkillsCount > 0 ? `${t("技能", "Skills")} (${activeSkillsCount})` : t("技能", "Skills");
 
   // Header
   document.getElementById("wsTitle").textContent = activeWs.name || "Workspace";
-  document.getElementById("wsSub").textContent = isGame ? `R${st.current_round ?? '—'} · 最新可玩 R${st.latest_playable_round ?? '—'}` : (activeWs.type || "general");
-  document.getElementById("btnLaunchText").textContent = isGame ? "启动试玩" : "打开目录";
+  document.getElementById("wsSub").textContent = isGame ? `R${st.current_round ?? '—'} · ${t("最新可玩", "Playable")} R${st.latest_playable_round ?? '—'}` : (activeWs.type || "general");
+  document.getElementById("btnLaunchText").textContent = isGame ? t("启动试玩", "Launch Game") : t("打开目录", "Open Folder");
 
   const pill = document.getElementById("statusPill");
   const btnSend = document.getElementById("btnSend");
@@ -3247,17 +3373,17 @@ function render(snap, fromMutation = false) {
     pill.className = "status-pill running";
     pill.innerHTML = `<i class="pulse-dot"></i><span>${escapeHtml((job.agent || "").toUpperCase())} · ${job.elapsed_seconds}s</span>`;
     btnSend.className = "send-btn stop";
-    btnSend.title = "中止当前任务";
+    btnSend.title = t("中止当前任务", "Stop Running Task");
     btnSend.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>`;
-    document.getElementById("composerHint").textContent = "运行中 · 点击红钮可随时中止";
+    document.getElementById("composerHint").textContent = t("运行中 · 点击红钮可随时中止", "Running · Click red button to abort");
     btnInsp.classList.add("has-notif");
   } else {
     pill.className = "status-pill";
-    pill.textContent = "就绪";
+    pill.textContent = t("就绪", "Ready");
     btnSend.className = "send-btn";
-    btnSend.title = "发送 (Ctrl+Enter)";
+    btnSend.title = t("发送 (Ctrl+Enter)", "Send (Ctrl+Enter)");
     btnSend.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>`;
-    document.getElementById("composerHint").textContent = "Ctrl+Enter 发送";
+    document.getElementById("composerHint").textContent = t("Ctrl+Enter 发送", "Ctrl+Enter to send");
     btnInsp.classList.remove("has-notif");
   }
 
@@ -3875,6 +4001,7 @@ async function pollLoop() {
   await refreshAll();
   setTimeout(pollLoop, latestSnap?.live_job?.running ? 180 : 1600);
 }
+applyLang(currentLang);
 pollLoop();
 </script>
 </body>

@@ -114,14 +114,17 @@ def load_app_settings() -> dict:
     defaults = {
         "approve_before_build": False,
         "user_name": "我",
+        "lang": "zh",
     }
     raw = read_json(SETTINGS_PATH, {})
     if not isinstance(raw, dict):
         return defaults
     uname = str(raw.get("user_name", "") or "").strip()[:16] or "我"
+    lang = "en" if str(raw.get("lang", "zh")).lower() == "en" else "zh"
     return {
         "approve_before_build": bool(raw.get("approve_before_build", False)),
         "user_name": uname,
+        "lang": lang,
     }
 
 
@@ -132,5 +135,7 @@ def save_app_settings(patch: dict) -> dict:
     if "user_name" in patch:
         uname = str(patch.get("user_name") or "").strip()[:16]
         cur["user_name"] = uname or "我"
+    if "lang" in patch:
+        cur["lang"] = "en" if str(patch.get("lang", "zh")).lower() == "en" else "zh"
     write_json(SETTINGS_PATH, cur)
     return cur

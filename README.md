@@ -65,7 +65,7 @@ cd SuperWorkbench
 python start.py
 ```
 
-On Windows, you can also double-click `Start-SuperWorkbench.cmd`.
+On Windows, double-click `Start-SuperWorkbench.cmd`; on macOS / Linux, run `./start.sh`.
 
 The studio opens at **`http://127.0.0.1:8765`** (strictly bound to localhost by default).
 
@@ -84,6 +84,7 @@ The studio opens at **`http://127.0.0.1:8765`** (strictly bound to localhost by 
 ```text
 SuperWorkbench/
 ├── start.py                     # Cross-platform launcher
+├── start.sh                     # macOS / Linux launcher
 ├── Start-SuperWorkbench.cmd     # Windows one-click launcher
 ├── skills/                      # Built-in starter SKILL.md packs
 │   ├── aigc-storyboard/
