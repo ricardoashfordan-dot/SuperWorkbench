@@ -718,6 +718,27 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             self._send_json({"ok": True, "aborted": aborted, "snapshot": build_snapshot()})
             return
 
+        if parsed.path == "/api/git":
+            action = str(data.get("action", "")).strip()
+            if action == "draft":
+                ok, result = runner.JOB_MANAGER.draft_commit_message(active_ws)
+                if not ok:
+                    self._send_json({"ok": False, "error": result}, 400)
+                    return
+                self._send_json({"ok": True, "message": result})
+                return
+            if action == "commit":
+                res = presets.git_commit_all(ws_path, str(data.get("message", "")))
+                if not res.get("ok"):
+                    self._send_json({"ok": False, "error": res.get("error", "提交失败")}, 400)
+                    return
+                _WS_DISK_CACHE.clear()
+                bump_version()
+                self._send_json({"ok": True, "commit": res, "snapshot": build_snapshot()})
+                return
+            self._send_json({"ok": False, "error": "未知 Git 操作"}, 400)
+            return
+
         if parsed.path == "/api/settings":
             updated = config.save_app_settings(data if isinstance(data, dict) else {})
             bump_version()

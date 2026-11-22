@@ -429,6 +429,72 @@ def get_file_diff_or_preview(ws_path: Path, rel_path: str) -> dict:
         return {"mode": "error", "content": f"无法读取该文件: {exc}"}
 
 
+def _git_run(git_bin: str, ws_path: Path, args: list[str], timeout: int = 8, stdin_text: str | None = None):
+    return subprocess.run(
+        [git_bin, "-C", str(ws_path), *args],
+        input=stdin_text,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout,
+    )
+
+
+def collect_diff_for_commit(ws_path: Path, max_chars: int = 14000) -> dict:
+    """Gather staged + unstaged + untracked changes as compact context for drafting a commit message."""
+    git_bin = find_git_bin()
+    if not git_bin or not (ws_path / ".git").exists():
+        return {"ok": False, "error": "当前空间不是 Git 仓库"}
+    try:
+        status = _git_run(git_bin, ws_path, ["status", "--porcelain"]).stdout.strip()
+        if not status:
+            return {"ok": False, "error": "当前没有需要提交的改动"}
+        has_head = _git_run(git_bin, ws_path, ["rev-parse", "--verify", "HEAD"]).returncode == 0
+        base = ["HEAD"] if has_head else []
+        stat = _git_run(git_bin, ws_path, ["diff", *base, "--stat"]).stdout.strip()
+        diff = _git_run(git_bin, ws_path, ["diff", *base, "--unified=2"], timeout=10).stdout
+        untracked = [ln[3:].strip().strip('"') for ln in status.splitlines() if ln.startswith("??")]
+        recent = _git_run(git_bin, ws_path, ["log", "-n", "6", "--pretty=%s"]).stdout.strip() if has_head else ""
+        if len(diff) > max_chars:
+            diff = diff[:max_chars] + "\n... (diff 过长已截断)"
+        return {
+            "ok": True,
+            "status": status,
+            "stat": stat,
+            "diff": diff,
+            "untracked": untracked[:30],
+            "recent_subjects": recent,
+        }
+    except Exception as exc:
+        return {"ok": False, "error": f"读取改动失败: {exc}"}
+
+
+def git_commit_all(ws_path: Path, message: str) -> dict:
+    """Stage all changes (respecting .gitignore) and create a commit. Never pushes."""
+    msg = (message or "").strip()
+    if not msg:
+        return {"ok": False, "error": "提交信息不能为空"}
+    git_bin = find_git_bin()
+    if not git_bin or not (ws_path / ".git").exists():
+        return {"ok": False, "error": "当前空间不是 Git 仓库"}
+    try:
+        add = _git_run(git_bin, ws_path, ["add", "-A"], timeout=20)
+        if add.returncode != 0:
+            return {"ok": False, "error": (add.stderr or add.stdout or "git add 失败").strip()[:400]}
+        cm = _git_run(git_bin, ws_path, ["commit", "-F", "-"], timeout=20, stdin_text=msg + "\n")
+        if cm.returncode != 0:
+            out = (cm.stderr or cm.stdout or "git commit 失败").strip()
+            if "user.email" in out or "user.name" in out:
+                out = "尚未配置 Git 身份，请先执行 git config --global user.name / user.email"
+            return {"ok": False, "error": out[:400]}
+        short = _git_run(git_bin, ws_path, ["rev-parse", "--short", "HEAD"]).stdout.strip()
+        subject = msg.splitlines()[0][:80]
+        return {"ok": True, "hash": short, "subject": subject}
+    except Exception as exc:
+        return {"ok": False, "error": f"提交失败: {exc}"}
+
+
 def get_aigc_studio_data(ws_path: Path) -> dict:
     stages = [
         ("01_script", "1. 脚本"),

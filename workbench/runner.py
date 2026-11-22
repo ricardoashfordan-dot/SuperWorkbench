@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shlex
 import signal
 import subprocess
@@ -822,6 +823,81 @@ class JobManager:
                 return False
             self.pending_approval = None
             return True
+
+    def draft_commit_message(self, workspace: dict) -> tuple[bool, str]:
+        """Synchronously ask the Planner slot to draft a Conventional Commit message from the current diff."""
+        ws_path = workspace.get("path", str(config.REPO_ROOT))
+        ctx = presets.collect_diff_for_commit(Path(ws_path))
+        if not ctx.get("ok"):
+            return False, ctx.get("error", "无法读取改动")
+
+        with self.lock:
+            if self.running:
+                return False, "当前已有任务在运行，请稍后再起草提交信息"
+            self.running = True
+            self.abort_requested = False
+            self.mode = "commit_msg"
+            self.workspace_id = workspace.get("id", "")
+            self.thread_id = "__commit__"
+            self.title = "起草提交信息"
+            self.started_at = time.time()
+            self.finished_at = None
+            self.exit_code = None
+            self.logs = []
+            self.live_reply = ""
+            self.current_step_desc = "正在阅读改动并起草提交信息..."
+
+        try:
+            untracked = "\n".join(f"- {u}" for u in ctx.get("untracked", [])) or "(无)"
+            style_hint = ctx.get("recent_subjects") or "(新仓库，暂无历史)"
+            sys_p = "你是严谨的 Git 提交信息撰写助手，只输出提交信息正文本身，不要任何解释、前后缀或代码块围栏。"
+            user_p = (
+                "请根据以下改动起草一条 Git 提交信息：\n"
+                "1. 第一行使用 Conventional Commits 格式（feat/fix/refactor/docs/chore/perf/test 等），简洁英文，不超过 72 个字符；\n"
+                "2. 若改动较多，空一行后用 2-4 条简短要点（- 开头）说明关键变化；\n"
+                "3. 保持与该仓库近期提交风格一致；绝对不要调用任何工具，直接输出结果。\n\n"
+                f"【近期提交标题】\n{style_hint}\n\n"
+                f"【改动统计】\n{ctx.get('stat') or '(仅新增未跟踪文件)'}\n\n"
+                f"【新增未跟踪文件】\n{untracked}\n\n"
+                f"【Diff】\n{ctx.get('diff') or '(无)'}"
+            )
+            rc, reply = self._run_slot_blocking("planner", user_p, sys_p, ws_path)
+            msg = _clean_commit_message(reply)
+            if rc != 0 or not msg:
+                msg = _fallback_commit_message(ctx)
+            with self.lock:
+                self.exit_code = 0
+            return True, msg
+        finally:
+            with self.lock:
+                self.running = False
+                self.finished_at = time.time()
+                self.proc = None
+                self.current_step_desc = ""
+                self.live_reply = ""
+
+
+def _clean_commit_message(raw: str) -> str:
+    text = (raw or "").strip()
+    text = text.replace("```text", "").replace("```git", "").replace("```", "").strip()
+    lines = [ln.rstrip() for ln in text.splitlines()]
+    # Drop chatty preambles like "提交信息如下：" before the conventional subject
+    pat = re.compile(r"^(feat|fix|refactor|docs|chore|perf|test|style|build|ci|revert)(\([^)]*\))?!?:\s")
+    for idx, ln in enumerate(lines):
+        if pat.match(ln.strip().strip("`")):
+            lines = lines[idx:]
+            break
+    cleaned = "\n".join(lines).strip().strip("`").strip()
+    return cleaned[:1200]
+
+
+def _fallback_commit_message(ctx: dict) -> str:
+    files = [ln[3:].strip() for ln in (ctx.get("status") or "").splitlines() if len(ln) > 3]
+    if not files:
+        return "chore: update files"
+    head = ", ".join(Path(f).name for f in files[:3])
+    more = f" (+{len(files) - 3} more)" if len(files) > 3 else ""
+    return f"chore: update {head}{more}"[:72]
 
 
 JOB_MANAGER = JobManager()
