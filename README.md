@@ -1,8 +1,17 @@
-# Super Workbench
+<p align="center">
+  <img src="workbench/static/icon.svg" width="68" height="68" alt="Super Workbench Icon" />
+</p>
 
-**Minimalist, Zero-Dependency Local Multi-Agent Orchestration Studio**
+<h1 align="center">Super Workbench</h1>
 
-[English](README.md) · [简体中文](README_ZH.md) · [AI Install Playbook](AGENT_INSTALL.md) · [Roadmap](ROADMAP.md)
+<p align="center">
+  <strong>Minimalist, Zero-Dependency Local Multi-Agent Orchestration Studio</strong><br/>
+  <a href="README.md">English</a> · <a href="README_ZH.md">简体中文</a> · <a href="AGENT_INSTALL.md">AI Install Playbook</a> · <a href="ROADMAP.md">Roadmap</a>
+</p>
+
+| Obsidian Dark | Muse Paper Light |
+| :---: | :---: |
+| ![Obsidian Dark Theme](docs/assets/preview-dark.png) | ![Muse Paper Light Theme](docs/assets/preview-light.png) |
 
 > **Install with Your AI Agent (Recommended)**: Paste this into Claude Code, OpenAI Codex, Cursor, or Antigravity:
 > ```text

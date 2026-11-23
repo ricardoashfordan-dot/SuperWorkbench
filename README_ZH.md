@@ -1,8 +1,17 @@
-# Super Workbench
+<p align="center">
+  <img src="workbench/static/icon.svg" width="68" height="68" alt="Super Workbench 图标" />
+</p>
 
-**零依赖、零额外 API 账单的本地多智能体协同工作台**
+<h1 align="center">Super Workbench</h1>
 
-[English](README.md) · [简体中文](README_ZH.md) · [AI 一键代装指南](AGENT_INSTALL.md) · [演进路线图](ROADMAP.md)
+<p align="center">
+  <strong>零依赖、零额外 API 账单的本地多智能体协同工作台</strong><br/>
+  <a href="README.md">English</a> · <a href="README_ZH.md">简体中文</a> · <a href="AGENT_INSTALL.md">AI 一键代装指南</a> · <a href="ROADMAP.md">演进路线图</a>
+</p>
+
+| Obsidian 暗夜深色 | Muse 纸白浅色 |
+| :---: | :---: |
+| ![Obsidian Dark](docs/assets/preview-dark.png) | ![Muse Paper Light](docs/assets/preview-light.png) |
 
 > **让你的 AI 帮你一键安装（推荐）**：直接把下面这句话发给你的 Claude Code / Codex / Cursor / Antigravity：
 > ```text
