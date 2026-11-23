@@ -546,9 +546,14 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             for slot_id in ("planner", "builder", "reviewer"):
                 patch = updates.get(slot_id)
                 if isinstance(patch, dict):
-                    for k in ("engine", "model", "effort", "label", "aigc_label"):
+                    for k in ("engine", "model", "effort", "label", "aigc_label", "custom_label", "system_prompt"):
                         if k in patch and patch[k] is not None:
-                            roles[slot_id][k] = str(patch[k]).strip()
+                            val = str(patch[k]).strip()
+                            if k == "custom_label":
+                                val = val[:24]
+                            elif k == "system_prompt":
+                                val = val[:2000]
+                            roles[slot_id][k] = val
             adapters.save_role_bindings(roles)
             self._send_json({"ok": True, "roles": roles, "snapshot": build_snapshot()})
             return

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import argparse
 import ctypes
+import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -12,8 +14,10 @@ import webbrowser
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "workbench"))
-import config  # noqa: E402
-import server  # noqa: E402
+import adapters  # noqa: E402
+import config    # noqa: E402
+import presets   # noqa: E402
+import server    # noqa: E402
 
 
 def _find_app_browser() -> str:
@@ -147,13 +151,92 @@ def _is_server_alive(url: str) -> bool:
         return False
 
 
+def _check_ollama() -> dict:
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=0.8) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="replace"))
+            models = [m.get("name", "") for m in data.get("models", []) if m.get("name")]
+            return {"reachable": True, "models": models[:12]}
+    except Exception:
+        return {"reachable": False, "models": []}
+
+
+def run_doctor(as_json: bool = False) -> int:
+    py_ok = sys.version_info >= (3, 10)
+    git_bin = presets.find_git_bin()
+    npx_bin = shutil.which("npx") or ""
+    browser_bin = _find_app_browser()
+    clis = adapters.detect_cli_status(force=True)
+    ollama = _check_ollama()
+    ready_clis = [k for k, v in clis.items() if v.get("ready")]
+    custom_engines = adapters.load_custom_engines()
+
+    recommendations = []
+    if not py_ok:
+        recommendations.append("Upgrade Python to 3.10+.")
+    if not ready_clis and not ollama["reachable"] and not custom_engines:
+        recommendations.append(
+            "No local AI CLI or Ollama detected yet. Prepare at least ONE of: "
+            "(A) Install a local CLI (Codex / Claude Code / Antigravity / Gemini CLI) and sign in, OR "
+            "(B) Start local Ollama (http://127.0.0.1:11434), OR "
+            "(C) Prepare an OpenAI-compatible API key (DeepSeek / OpenRouter / OpenAI) to add in Settings -> Engines & API."
+        )
+    elif not any(k in ready_clis for k in ("codex", "claude", "agy", "gemini")):
+        recommendations.append(
+            "For automated local file editing in the Core Builder role, installing one coding CLI "
+            "(e.g. OpenAI Codex, Claude Code, Antigravity, or Gemini CLI) is recommended."
+        )
+    if not git_bin:
+        recommendations.append("Optional: Install Git to unlock Live Git Diff & 1-click AI Commit in the Inspector.")
+    if not npx_bin:
+        recommendations.append("Optional: Install Node.js (npx) if you plan to use stdio MCP tools like Playwright or GitHub.")
+
+    report = {
+        "ok": py_ok,
+        "os": f"{platform.system()} {platform.release()}",
+        "python": {"version": platform.python_version(), "ok": py_ok},
+        "git": {"installed": bool(git_bin), "path": git_bin},
+        "npx": {"installed": bool(npx_bin), "path": npx_bin},
+        "desktop_browser": {"installed": bool(browser_bin), "path": browser_bin},
+        "clis": {k: {"ready": bool(v.get("ready")), "path": v.get("path", "")} for k, v in clis.items()},
+        "ollama": ollama,
+        "custom_engines_count": len(custom_engines),
+        "ready_clis": ready_clis,
+        "recommendations": recommendations,
+    }
+
+    if as_json:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        print("=== Super Workbench Environment Doctor ===")
+        print(f"OS      : {report['os']}")
+        print(f"Python  : {report['python']['version']} ({'OK' if py_ok else 'NEEDS 3.10+'})")
+        print(f"Git     : {'OK (' + git_bin + ')' if git_bin else 'Not found (optional, enables Live Git Diff)'}")
+        print(f"npx     : {'OK' if npx_bin else 'Not found (optional, for stdio MCP tools)'}")
+        print(f"Desktop : {'OK (' + Path(browser_bin).name + ' --app mode)' if browser_bin else 'Standard browser fallback'}")
+        print(f"CLIs    : {', '.join(ready_clis) if ready_clis else 'None detected'}")
+        print(f"Ollama  : {'Online (' + str(len(ollama['models'])) + ' models)' if ollama['reachable'] else 'Offline / not running'}")
+        if recommendations:
+            print("\nNext Steps / Preparation:")
+            for idx, rec in enumerate(recommendations, 1):
+                print(f"  {idx}. {rec}")
+        else:
+            print("\nAll checks passed! Run `python start.py` to launch Super Workbench.")
+    return 0 if py_ok else 1
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Super Workbench — Local Multi-Agent Orchestration Studio")
     parser.add_argument("--host", default=config.HOST, help="Bind host (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=config.PORT, help="Bind port (default: 8765)")
     parser.add_argument("--no-browser", action="store_true", help="Do not automatically open window")
     parser.add_argument("--tab", action="store_true", help="Open in a normal browser tab instead of standalone app window")
+    parser.add_argument("--doctor", action="store_true", help="Run environment readiness check and exit")
+    parser.add_argument("--json", action="store_true", help="Output --doctor report as JSON (for AI agents)")
     args = parser.parse_args()
+
+    if args.doctor:
+        raise SystemExit(run_doctor(as_json=args.json))
 
     url = f"http://{args.host}:{args.port}"
 

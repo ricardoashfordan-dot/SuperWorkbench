@@ -2,7 +2,12 @@
 
 **Minimalist, Zero-Dependency Local Multi-Agent Orchestration Studio**
 
-[English](README.md) · [简体中文](README_ZH.md)
+[English](README.md) · [简体中文](README_ZH.md) · [AI Install Playbook](AGENT_INSTALL.md) · [Roadmap](ROADMAP.md)
+
+> **Install with Your AI Agent (Recommended)**: Paste this into Claude Code, OpenAI Codex, Cursor, or Antigravity:
+> ```text
+> Read https://github.com/ricardoashfordan-dot/SuperWorkbench/blob/main/AGENT_INSTALL.md and help me install and configure Super Workbench on this computer.
+> ```
 
 Orchestrate your local AI CLIs (**Antigravity `agy`**, **OpenAI `codex`**, **Claude Code `claude`**, **Gemini CLI `gemini`**, **DSH**) alongside **Ollama** and any **OpenAI-compatible API** inside one calm, Muse / Codex / Linear-inspired workspace — built for both **Software Engineering** and **AIGC Production Pipelines**.
 

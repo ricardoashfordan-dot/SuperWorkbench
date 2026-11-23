@@ -179,6 +179,35 @@ class SuperWorkbenchTestSuite(unittest.TestCase):
         for key in ("version", "workspaces", "threads", "roles", "engines", "skills", "mcp", "settings", "git", "aigc"):
             self.assertIn(key, snap)
 
+    def test_07_role_diy_persona_and_doctor(self):
+        roles = adapters.load_role_bindings()
+        roles["planner"]["custom_label"] = "增长文案总监"
+        roles["planner"]["system_prompt"] = "你是顶级增长文案总监，只输出高转化方案。"
+        adapters.save_role_bindings(roles)
+
+        reloaded = adapters.load_role_bindings()
+        self.assertEqual(reloaded["planner"]["custom_label"], "增长文案总监")
+        self.assertEqual(reloaded["planner"]["system_prompt"], "你是顶级增长文案总监，只输出高转化方案。")
+
+        ws = config.get_active_workspace()
+        sys_p, _, _ = runner.JOB_MANAGER._build_prompts("planner", "写一个发布方案", ws)
+        self.assertEqual(sys_p, "你是顶级增长文案总监，只输出高转化方案。")
+
+        proc = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "start.py"), "--doctor", "--json"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=15,
+            creationflags=config.NO_WINDOW_FLAGS,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        import json as _json
+        doc = _json.loads(proc.stdout)
+        self.assertTrue(doc["ok"])
+        self.assertIn("clis", doc)
+        self.assertIn("ollama", doc)
+
 
 if __name__ == "__main__":
     unittest.main()

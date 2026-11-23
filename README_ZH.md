@@ -2,7 +2,12 @@
 
 **零依赖、零额外 API 账单的本地多智能体协同工作台**
 
-[English](README.md) · [简体中文](README_ZH.md)
+[English](README.md) · [简体中文](README_ZH.md) · [AI 一键代装指南](AGENT_INSTALL.md) · [演进路线图](ROADMAP.md)
+
+> **让你的 AI 帮你一键安装（推荐）**：直接把下面这句话发给你的 Claude Code / Codex / Cursor / Antigravity：
+> ```text
+> 请阅读 https://github.com/ricardoashfordan-dot/SuperWorkbench/blob/main/AGENT_INSTALL.md ，先体检我电脑的环境并告诉我需要准备什么，然后帮我安装并启动 Super Workbench。
+> ```
 
 在一个极简、冷静的 Muse / Codex / Linear 风格界面中，把你本机已经装好的 AI 命令行工具（**Antigravity `agy`**、**OpenAI `codex`**、**Claude Code `claude`**、**Gemini CLI `gemini`**、**DSH**）以及 **本地 Ollama / 任意 OpenAI 兼容 API** 串成一条顺手的协作流水线——同时服务于 **软件工程开发** 与 **AIGC 漫剧 / 短片制片**。
 

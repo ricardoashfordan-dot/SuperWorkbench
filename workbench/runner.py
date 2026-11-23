@@ -591,9 +591,13 @@ class JobManager:
             self.append_log(f"已附带 {len(attachments or [])} 个附件/图片")
         att_section = f"\n\n{att_block}\n" if att_block else ""
 
+        role_cfg = adapters.load_role_bindings().get(slot, {})
+        custom_label = str(role_cfg.get("custom_label", "") or "").strip()
+        custom_sys = str(role_cfg.get("system_prompt", "") or "").strip()
+
         if slot == "planner":
-            role_title = "AIGC 编剧与分镜导演" if is_aigc else "策划与架构审计官"
-            sys_p = f"你是多智能体工作台中的【{role_title}】。请用结构清晰、有深度的中文 Markdown 直接回复设计方案、权衡选项与具体执行清单。"
+            role_title = custom_label or ("AIGC 编剧与分镜导演" if is_aigc else "策划与架构审计官")
+            sys_p = custom_sys or f"你是多智能体工作台中的【{role_title}】。请用结构清晰、有深度的中文 Markdown 直接回复设计方案、权衡选项与具体执行清单。"
             user_p = (
                 f"工作空间：{ws_name} ({ws_path})\n{ws_brief}\n{chat_ctx}{skills_section}{att_section}\n\n"
                 f"用户需求：\n「{instruction}」\n\n"
@@ -602,8 +606,8 @@ class JobManager:
             return sys_p, user_p, img_paths
 
         if slot == "builder":
-            role_title = "AIGC 制片与剪辑自动化工程师" if is_aigc else "核心工程主程"
-            sys_p = f"你是多智能体工作台中的【{role_title}】，负责在本地工作区直接完成实现与验证，并用清晰中文 Markdown 汇报结果。"
+            role_title = custom_label or ("AIGC 制片与剪辑自动化工程师" if is_aigc else "核心工程主程")
+            sys_p = custom_sys or f"你是多智能体工作台中的【{role_title}】，负责在本地工作区直接完成实现与验证，并用清晰中文 Markdown 汇报结果。"
             user_p = (
                 f"工作空间：{ws_name} ({ws_path})\n{chat_ctx}{skills_section}{att_section}\n\n"
                 f"用户指令：\n「{instruction}」\n\n"
@@ -611,8 +615,8 @@ class JobManager:
             )
             return sys_p, user_p, img_paths
 
-        role_title = "AIGC 审片与合规质检官" if is_aigc else "独立测试与代码质检官"
-        sys_p = f"你是多智能体工作台中的【{role_title}】，负责基于事实做只读审查、风险诊断与客观核验，用简洁中文 Markdown 输出结论。"
+        role_title = custom_label or ("AIGC 审片与合规质检官" if is_aigc else "独立测试与代码质检官")
+        sys_p = custom_sys or f"你是多智能体工作台中的【{role_title}】，负责基于事实做只读审查、风险诊断与客观核验，用简洁中文 Markdown 输出结论。"
         user_p = (
             f"工作空间：{ws_name} ({ws_path})\n{ws_brief}\n{chat_ctx}{skills_section}{att_section}\n\n"
             f"请针对以下内容进行独立核验与诊断：\n「{instruction}」"

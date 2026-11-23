@@ -332,6 +332,8 @@ def default_role_bindings() -> dict:
             "id": "planner",
             "label": "策划 · 方案",
             "aigc_label": "编剧 · 分镜",
+            "custom_label": "",
+            "system_prompt": "",
             "engine": p_eng,
             "model": mcfg.get("agy_model", "gemini-4-neon-high") if p_eng == "agy" else "",
             "effort": "high",
@@ -340,6 +342,8 @@ def default_role_bindings() -> dict:
             "id": "builder",
             "label": "核心执行",
             "aigc_label": "制片 · 剪辑",
+            "custom_label": "",
+            "system_prompt": "",
             "engine": b_eng,
             "model": mcfg.get("codex_model", "gpt-6.2-sol") if b_eng == "codex" else "",
             "effort": mcfg.get("codex_effort", "high"),
@@ -348,6 +352,8 @@ def default_role_bindings() -> dict:
             "id": "reviewer",
             "label": "独立质检",
             "aigc_label": "审片 · 质检",
+            "custom_label": "",
+            "system_prompt": "",
             "engine": r_eng,
             "model": "headless" if r_eng == "dsh" else "",
             "effort": "medium",
@@ -365,7 +371,7 @@ def load_role_bindings() -> dict:
     for slot_id, def_val in defaults.items():
         cur = dict(def_val)
         if isinstance(saved.get(slot_id), dict):
-            for k in ("label", "aigc_label", "engine", "model", "effort"):
+            for k in ("label", "aigc_label", "custom_label", "system_prompt", "engine", "model", "effort"):
                 if saved[slot_id].get(k) is not None:
                     cur[k] = saved[slot_id][k]
         merged[slot_id] = cur

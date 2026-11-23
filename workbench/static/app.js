@@ -764,6 +764,8 @@ function renderStudioModal() {
       ? [["low","Low"],["medium","Medium"],["high","High"],["xhigh","Max"]]
       : [["low","轻量"],["medium","均衡"],["high","深度"],["xhigh","极限"]];
 
+    const hasCustomPersona = Boolean((r.custom_label || "").trim() || (r.system_prompt || "").trim());
+
     return `
       <div class="insp-card">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -788,6 +790,25 @@ function renderStudioModal() {
           </div>` : ""}
         </div>
         ${warnApi}
+        <details class="explain-fold" style="margin-top:4px;">
+          <summary>
+            <span>${t("DIY 自定义角色称呼与人设提示词", "Customize Role Name & System Prompt")}${hasCustomPersona ? ` · <strong style="color:var(--c-agy);">${t("已自定义", "Custom")}</strong>` : ""}</span>
+            <span>▾</span>
+          </summary>
+          <div class="explain-content" style="display:flex;flex-direction:column;gap:8px;padding-top:8px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div class="field" style="flex:1;margin:0;">
+                <label>${t("自定义角色名（留空使用默认）", "Custom Role Name (optional)")}</label>
+                <input id="slot-clabel-${s.id}" maxlength="24" value="${escapeHtml(r.custom_label || "")}" placeholder="${t("例如：增长文案总监 / 安全审计官 / 分镜导演", "e.g. Growth Strategist / Security Auditor / Director")}" />
+              </div>
+              <button class="btn sm" type="button" style="margin-top:16px;" onclick="resetRolePersona('${s.id}')">${t("恢复默认", "Reset")}</button>
+            </div>
+            <div class="field" style="margin:0;">
+              <label>${t("专属人设提示词（System Prompt，留空使用默认）", "Custom System Prompt (optional)")}</label>
+              <textarea id="slot-sysp-${s.id}" rows="2" style="width:100%;background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;padding:7px 9px;color:var(--text);font-family:inherit;font-size:12px;resize:vertical;" placeholder="${t("直接用大白话写明该角色的职责、输出风格与红线规范…", "Describe this role's persona, tone, and constraints in plain language...")}">${escapeHtml(r.system_prompt || "")}</textarea>
+            </div>
+          </div>
+        </details>
       </div>`;
   }).join("");
 
@@ -829,23 +850,35 @@ function onSlotEngineChange(slotId) {
   renderStudioModal();
 }
 
+function resetRolePersona(slotId) {
+  const cLbl = document.getElementById("slot-clabel-" + slotId);
+  const sysP = document.getElementById("slot-sysp-" + slotId);
+  if (cLbl) cLbl.value = "";
+  if (sysP) sysP.value = "";
+  showToast(t("已清空自定义人设，点击「保存角色配置」生效", "Reset to default persona — click Save Role Bindings to apply"));
+}
+
 async function saveRoleBindings() {
   const payload = {};
   ["planner", "builder", "reviewer"].forEach(slotId => {
     const engEl = document.getElementById("slot-eng-" + slotId);
     const modEl = document.getElementById("slot-model-" + slotId);
     const effEl = document.getElementById("slot-effort-" + slotId);
+    const cLblEl = document.getElementById("slot-clabel-" + slotId);
+    const sysEl = document.getElementById("slot-sysp-" + slotId);
     payload[slotId] = {
       engine: engEl ? engEl.value : "",
       model: modEl ? modEl.value.trim() : "",
-      effort: effEl ? effEl.value : "high"
+      effort: effEl ? effEl.value : "high",
+      custom_label: cLblEl ? cLblEl.value.trim() : "",
+      system_prompt: sysEl ? sysEl.value.trim() : ""
     };
   });
   try {
     const res = await api("/api/roles", { roles: payload });
-    render(res.snapshot);
+    render(res.snapshot, true);
     closeStudioModal();
-    showToast("角色与引擎配置已生效");
+    showToast(t("角色与引擎配置已生效", "Role & engine bindings saved"));
   } catch (e) { showToast(e.message); }
 }
 
@@ -1654,9 +1687,10 @@ function render(snap, fromMutation = false) {
     if (dot) dot.className = "s-dot " + (eng.ready ? "on" : "off");
 
     const nodeId = slotToNode[slotId];
-    const roleShort = isAigc
+    const defaultShort = isAigc
       ? (slotId === "planner" ? t("编剧", "Script") : slotId === "builder" ? t("制片", "Produce") : t("审片", "Review"))
       : (slotId === "planner" ? t("策划", "Plan") : slotId === "builder" ? t("执行", "Build") : t("质检", "Review"));
+    const roleShort = (r.custom_label || "").trim() || defaultShort;
 
     const pLbl = document.getElementById("pill-label-" + nodeId);
     if (pLbl) pLbl.textContent = `${roleShort} · ${eng.short}`;
@@ -1666,9 +1700,10 @@ function render(snap, fromMutation = false) {
     const rTitle = document.getElementById("rtitle-" + nodeId);
     if (rTitle) rTitle.textContent = `${roleShort} · ${eng.name}${r.model ? ' (' + r.model + ')' : ''}`;
 
+    const roleDisplay = (r.custom_label || "").trim() || (isAigc ? (r.aigc_label || roleShort) : (r.label || roleShort));
     ROLE_INFO[nodeId] = {
       name: eng.name,
-      role: `${isAigc ? (r.aigc_label || roleShort) : (r.label || roleShort)}${r.model ? ' · ' + r.model : ''}`
+      role: `${roleDisplay}${r.model ? ' · ' + r.model : ''}`
     };
     summaryParts.push(`${eng.short}`);
   });
