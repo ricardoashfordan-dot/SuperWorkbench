@@ -1,4 +1,4 @@
-import json
+import math
 import os
 import re
 import shutil
@@ -15,6 +15,8 @@ ERROR_PATTERNS = (
     "ObjectDB instances leaked",
     "ERROR:",
 )
+MIN_FPS = 60.0
+MAX_LATENCY_MS = 100.0
 
 SKIP_DIRS = {
     ".git", ".godot", ".workbench", "node_modules", "__pycache__",
@@ -173,36 +175,75 @@ def _extract_report_numbers(text: str, round_num: int) -> dict:
     if not m_fps:
         m_fps = re.search(r"(\d+\.\d+)\s*FPS[^。;\n]{0,30}?(\d+\.\d+)%", text)
     if m_fps:
-        data["fps"] = float(m_fps.group(1))
-        data["wall_ratio_pct"] = float(m_fps.group(2))
-    m_lat = re.search(r"([1-9]\d(?:\.\d+)?)\s*ms", text)
+        data["fps"] = _nonnegative_metric(m_fps.group(1))
+        data["wall_ratio_pct"] = _nonnegative_metric(m_fps.group(2))
+    m_lat = re.search(
+        r"^[ \t]*(?:[-*][ \t]+)?(?:\*\*)?(?:输入(?:响应)?延迟|input[ _-]latency)"
+        r"(?:\*\*)?[ \t]*[:：=][ \t]*(?:\*\*)?(\d+(?:\.\d+)?)[ \t]*(?:ms\b|毫秒)",
+        text, re.IGNORECASE | re.MULTILINE,
+    )
     if m_lat:
-        data["input_latency_ms"] = float(m_lat.group(1))
+        data["input_latency_ms"] = _nonnegative_metric(m_lat.group(1))
     return data
+
+
+def _nonnegative_metric(value) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) and number >= 0 else None
 
 
 def _find_desktop_json_metrics(project_dir: Path, round_num: int) -> dict:
     tr = project_dir / "test-results" / f"round{round_num}"
     if not tr.exists():
         return {}
-    candidates = sorted(tr.rglob(f"*{round_num}*desktop*.json"))
+    candidates = list(tr.rglob(f"*{round_num}*desktop*.json"))
     if not candidates:
-        candidates = sorted(tr.rglob("*desktop*.json"))
+        candidates = list(tr.rglob("*desktop*.json"))
+    candidates.sort(key=lambda path: (path.stat().st_mtime_ns, path), reverse=True)
     for p in candidates:
-        try:
-            payload = json.loads(p.read_text(encoding="utf-8", errors="ignore"))
-        except Exception:
+        payload = config.read_json(p, {})
+        if not isinstance(payload, dict):
             continue
-        if isinstance(payload, dict):
-            fps = payload.get("avg_fps") or payload.get("fps") or payload.get("render_fps")
-            ratio = payload.get("wall_clock_ratio") or payload.get("physics_wall_ratio")
-            if fps is not None:
-                out = {"fps": round(float(fps), 2)}
-                if ratio is not None:
-                    val = float(ratio)
-                    out["wall_ratio_pct"] = round(val * 100.0 if val <= 2.0 else val, 2)
-                return out
+        fps = next((payload[key] for key in ("avg_fps", "fps", "render_fps") if payload.get(key) is not None), None)
+        ratio = next((payload[key] for key in ("wall_clock_ratio", "physics_wall_ratio") if payload.get(key) is not None), None)
+        fps = _nonnegative_metric(fps)
+        latency = _nonnegative_metric(payload.get("input_latency_ms"))
+        if fps is not None or latency is not None:
+            out = {"fps": fps, "input_latency_ms": latency}
+            val = _nonnegative_metric(ratio)
+            if val is not None:
+                out["wall_ratio_pct"] = round(val * 100.0 if val <= 2.0 else val, 2)
+            return out
     return {}
+
+
+def _read_smoke_metrics(project_dir: Path, round_num: int) -> tuple[str, float | None]:
+    results_dir = project_dir / "test-results" / f"round{round_num}"
+    cases = sorted(results_dir.rglob("*smoke*.json"))
+    if not cases:
+        return "PENDING", None
+    latest = max(cases, key=lambda p: p.stat().st_mtime_ns)
+    passed = []
+    latencies = []
+    for path in cases:
+        if path.parent != latest.parent:
+            continue
+        case = config.read_json(path, {})
+        if not isinstance(case, dict):
+            continue
+        if isinstance(case.get("bo3_pass"), bool):
+            passed.append(case["bo3_pass"] and not case.get("failures"))
+        for key in ("movement_ms", "jump_ms"):
+            latency = _nonnegative_metric(case.get(key))
+            if latency is not None:
+                latencies.append(latency)
+    bo3_status = ("PASS" if all(passed) else "FAIL") if passed else "PENDING"
+    return bo3_status, max(latencies, default=None)
 
 
 def _find_latest_screenshot(project_dir: Path, round_num: int) -> str | None:
@@ -216,28 +257,33 @@ def _find_latest_screenshot(project_dir: Path, round_num: int) -> str | None:
     return str(pngs[0]) if pngs else None
 
 
+def _collect_round_metrics(project_dir: Path, round_num: int) -> dict:
+    report = project_dir / f"ROUND{round_num}_REPORT.md"
+    info = {
+        "round": round_num,
+        "report_exists": report.exists(),
+        "fps": None,
+        "wall_ratio_pct": None,
+        "input_latency_ms": None,
+    }
+    info.update(_find_desktop_json_metrics(project_dir, round_num))
+    if info["report_exists"]:
+        extracted = _extract_report_numbers(config.read_text(report), round_num)
+        for key, value in extracted.items():
+            if info.get(key) is None:
+                info[key] = value
+    info["bo3_status"], smoke_latency = _read_smoke_metrics(project_dir, round_num)
+    if info["input_latency_ms"] is None:
+        info["input_latency_ms"] = smoke_latency
+    return info
+
+
 def collect_round_metrics(project_dir: Path, limit: int = 8) -> list[dict]:
     rounds = detect_rounds(project_dir)[-limit:]
-    out = []
-    for r in rounds:
-        report = project_dir / f"ROUND{r}_REPORT.md"
-        info = {
-            "round": r,
-            "report_exists": report.exists(),
-            "fps": None,
-            "wall_ratio_pct": None,
-            "input_latency_ms": None,
-            "screenshot": _find_latest_screenshot(project_dir, r),
-        }
-        info.update(_find_desktop_json_metrics(project_dir, r))
-        if report.exists():
-            txt = report.read_text(encoding="utf-8", errors="ignore")
-            extracted = _extract_report_numbers(txt, r)
-            for k, v in extracted.items():
-                if info.get(k) is None:
-                    info[k] = v
-        out.append(info)
-    return out
+    return [
+        {**_collect_round_metrics(project_dir, r), "screenshot": _find_latest_screenshot(project_dir, r)}
+        for r in rounds
+    ]
 
 
 def get_game_telemetry(project_dir: Path, target_round: int) -> dict:
@@ -270,9 +316,11 @@ def get_game_telemetry(project_dir: Path, target_round: int) -> dict:
 def run_pre_submit_self_check(project_dir: Path, round_num: int | None = None) -> dict:
     r, scene_path = latest_scene_for_round(project_dir, round_num)
     rel_scene = f"res://scenes/{scene_path.name}"
+    workspace_path = str(project_dir.resolve())
     godot_bin = find_godot_console()
     if not godot_bin:
-        return {
+        result = {
+            "workspace_path": workspace_path,
             "round": r,
             "scene": rel_scene,
             "checked_at": config.now_iso(),
@@ -285,6 +333,8 @@ def run_pre_submit_self_check(project_dir: Path, round_num: int | None = None) -
             },
             "log_tail": [],
         }
+        config.write_json(config.SELF_CHECK_PATH, result)
+        return result
 
     cmd = [str(godot_bin), "--headless", "--path", str(project_dir), rel_scene, "--quit-after", "120"]
     try:
@@ -299,9 +349,16 @@ def run_pre_submit_self_check(project_dir: Path, round_num: int | None = None) -
         )
         combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
         exit_ok = proc.returncode == 0
+        boot_detail = f"exit={proc.returncode}"
     except subprocess.TimeoutExpired:
         combined = "TIMEOUT after 30s"
         exit_ok = False
+        boot_detail = combined
+        proc = None
+    except OSError as exc:
+        combined = f"ERROR: {exc}"
+        exit_ok = False
+        boot_detail = combined
         proc = None
 
     matched_errors = [
@@ -309,18 +366,19 @@ def run_pre_submit_self_check(project_dir: Path, round_num: int | None = None) -
         for line in combined.splitlines()
         if any(pat in line for pat in ERROR_PATTERNS)
     ]
-    zero_errors = len(matched_errors) == 0
+    zero_errors = proc is not None and not matched_errors
     smoke_pass = exit_ok and zero_errors
     result = {
+        "workspace_path": workspace_path,
         "round": r,
         "scene": rel_scene,
         "checked_at": config.now_iso(),
-        "status": "PASS" if (exit_ok and zero_errors and smoke_pass) else "FAIL",
+        "status": "PASS" if smoke_pass else "FAIL",
         "exit_code": proc.returncode if proc else -1,
         "checks": {
-            "bootable": {"passed": exit_ok, "detail": f"exit={proc.returncode if proc else 'timeout'}"},
-            "zero_errors": {"passed": zero_errors, "detail": "0 errors" if zero_errors else f"{len(matched_errors)} errors"},
-            "smoke_path": {"passed": smoke_pass, "detail": "120 frames headless clean exit"},
+            "bootable": {"passed": exit_ok, "detail": boot_detail},
+            "zero_errors": {"passed": zero_errors, "detail": f"{len(matched_errors)} errors" if proc else "Not executed"},
+            "smoke_path": {"passed": smoke_pass, "detail": "120 frames headless clean exit" if smoke_pass else "Smoke check failed"},
         },
         "log_tail": [ln for ln in combined.splitlines() if ln.strip()][-15:],
     }
@@ -328,29 +386,61 @@ def run_pre_submit_self_check(project_dir: Path, round_num: int | None = None) -
     return result
 
 
-def run_dsh_verification(project_dir: Path) -> dict:
-    metrics = collect_round_metrics(project_dir, limit=6)
-    measured = [m for m in metrics if m.get("fps") is not None or m.get("report_exists")]
-    latest = measured[-1] if measured else {}
+def load_workspace_self_check(project_dir: Path) -> dict:
+    result = config.read_json(config.SELF_CHECK_PATH, {})
+    if isinstance(result, dict) and result.get("workspace_path") == str(project_dir.resolve()):
+        return result
+    return {}
+
+
+def run_dsh_verification(project_dir: Path, round_num: int | None = None) -> dict:
+    if round_num is None:
+        round_num, _ = latest_scene_for_round(project_dir)
+    metrics = _collect_round_metrics(project_dir, round_num)
     asset = validate_asset_contract(project_dir)
 
-    fps = latest.get("fps")
-    lat = latest.get("input_latency_ms") or 72.9
-    fps_ok = fps is not None and fps >= 60.0
-    lat_ok = lat < 100.0
-    bo3_ok = bool(latest.get("report_exists"))
+    fps = metrics["fps"]
+    lat = metrics["input_latency_ms"]
+    fps_ok = fps is not None and fps >= MIN_FPS
+    lat_ok = lat is not None and lat < MAX_LATENCY_MS
+    bo3 = metrics["bo3_status"]
+    bo3_ok = bo3 == "PASS"
 
     return {
         "checked_at": config.now_iso(),
-        "round": latest.get("round"),
+        "round": round_num,
         "objective_3": {
             "fps_ge_60": {"passed": fps_ok, "value": fps, "threshold": ">= 60 FPS"},
             "input_latency_lt_100ms": {"passed": lat_ok, "value": lat, "threshold": "< 100 ms"},
-            "bo3_full_loop": {"passed": bo3_ok, "value": "PASS" if bo3_ok else "PENDING", "threshold": "BO3 clean"},
+            "bo3_full_loop": {"passed": bo3_ok, "value": bo3, "threshold": "BO3 clean"},
         },
         "asset_contract": asset,
         "overall_pass": fps_ok and lat_ok and bo3_ok and asset["status"] != "FAIL",
     }
+
+
+def format_dsh_verification(result: dict) -> str:
+    checks = result["objective_3"]
+    lines = [f"第 {result['round']} 轮"]
+    for key, label, unit, limit in (
+        ("fps_ge_60", "帧率", "FPS", MIN_FPS),
+        ("input_latency_lt_100ms", "输入延迟", "ms", MAX_LATENCY_MS),
+    ):
+        check = checks[key]
+        value = check["value"]
+        if value is None:
+            measured = "未测"
+        elif value < limit and round(value, 2) == limit:
+            measured = f"< {limit:g} {unit}"
+        else:
+            number = f"{value:.2f}".rstrip("0").rstrip(".")
+            measured = f"{number} {unit}"
+        status = "，未达标" if value is not None and not check["passed"] else ""
+        lines.append(f"- {label}：{measured}（要求 {check['threshold']}{status}）")
+    bo3 = {"PASS": "通过", "FAIL": "未通过", "PENDING": "未测"}[checks["bo3_full_loop"]["value"]]
+    lines.append(f"- BO3：{bo3}")
+    lines.append(f"- 资产契约：{result['asset_contract']['status']}")
+    return "\n".join(lines)
 
 
 def find_git_bin() -> str:

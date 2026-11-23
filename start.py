@@ -172,7 +172,7 @@ def run_doctor(as_json: bool = False) -> int:
     git_bin = presets.find_git_bin()
     npx_bin = shutil.which("npx") or ""
     browser_bin = _find_app_browser()
-    clis = adapters.detect_cli_status(force=True)
+    clis = adapters.detect_cli_status(force=True, probe_versions=True)
     ollama = _check_ollama()
     ready_clis = [k for k, v in clis.items() if v.get("ready")]
     custom_engines = adapters.load_custom_engines()
@@ -197,7 +197,20 @@ def run_doctor(as_json: bool = False) -> int:
     if not npx_bin:
         recommendations.append("Optional: Install Node.js (npx) if you plan to use stdio MCP tools like Playwright or GitHub.")
 
+    # defensive: never print or serialize the raw session token value, only its file/env source
     _, tok_source = config.get_or_create_session_token()
+    cli_report = {}
+    for cid in ("agy", "codex", "claude", "gemini", "dsh"):
+        info = clis.get(cid, {})
+        installed = bool(info.get("ready"))
+        cli_report[cid] = {
+            "installed": installed,
+            "ready": installed,
+            "path": info.get("path", ""),
+            "version": info.get("version", "unknown") if installed else "not installed",
+            "model_source": info.get("model_source", "n/a"),
+        }
+
     report = {
         "ok": py_ok,
         "os": f"{platform.system()} {platform.release()}",
@@ -206,7 +219,7 @@ def run_doctor(as_json: bool = False) -> int:
         "npx": {"installed": bool(npx_bin), "path": npx_bin},
         "desktop_browser": {"installed": bool(browser_bin), "path": browser_bin},
         "api_auth": {"enabled": True, "token_source": tok_source},
-        "clis": {k: {"ready": bool(v.get("ready")), "path": v.get("path", "")} for k, v in clis.items()},
+        "clis": cli_report,
         "ollama": ollama,
         "custom_engines_count": len(custom_engines),
         "ready_clis": ready_clis,
@@ -223,8 +236,12 @@ def run_doctor(as_json: bool = False) -> int:
         print(f"npx     : {'OK' if npx_bin else 'Not found (optional, for stdio MCP tools)'}")
         print(f"Desktop : {'OK (' + Path(browser_bin).name + ' --app mode)' if browser_bin else 'Standard browser fallback'}")
         print(f"Auth    : Enabled (session token: {tok_source})")
-        print(f"CLIs    : {', '.join(ready_clis) if ready_clis else 'None detected'}")
         print(f"Ollama  : {'Online (' + str(len(ollama['models'])) + ' models)' if ollama['reachable'] else 'Offline / not running'}")
+        print("\nCLI Engines:")
+        for cid, info in cli_report.items():
+            status = "installed" if info["installed"] else "not found"
+            ver_part = f"version: {info['version']}" if info["installed"] else "version: -"
+            print(f"  - {cid:<7} : {status:<9} | {ver_part:<26} | model_source: {info['model_source']}")
         if recommendations:
             print("\nNext Steps / Preparation:")
             for idx, rec in enumerate(recommendations, 1):
@@ -232,6 +249,60 @@ def run_doctor(as_json: bool = False) -> int:
         else:
             print("\nAll checks passed! Run `python start.py` to launch Super Workbench.")
     return 0 if py_ok else 1
+
+
+def create_desktop_shortcut() -> int:
+    """Create a Desktop launcher shortcut so users open the standalone app window with token auth."""
+    repo_root = Path(__file__).resolve().parent
+    start_py = repo_root / "start.py"
+    ico_path = config.STATIC_DIR / "icon.ico"
+
+    if os.name == "nt":
+        py_exe = Path(sys.executable)
+        pyw_exe = py_exe.with_name("pythonw.exe")
+        target = str(pyw_exe if pyw_exe.exists() else py_exe)
+        ps_bin = shutil.which("powershell") or "powershell"
+        # Pass paths via environment variables instead of interpolating into PowerShell strings
+        ps_script = (
+            "$ws = New-Object -ComObject WScript.Shell; "
+            "$desktop = [Environment]::GetFolderPath('Desktop'); "
+            "$lnk = $ws.CreateShortcut((Join-Path $desktop 'Super Workbench.lnk')); "
+            "$lnk.TargetPath = $env:SWB_TARGET; "
+            "$lnk.Arguments = '\"' + $env:SWB_START_PY + '\"'; "
+            "$lnk.WorkingDirectory = $env:SWB_WORKDIR; "
+            "if (Test-Path $env:SWB_ICON) { $lnk.IconLocation = $env:SWB_ICON }; "
+            "$lnk.Description = 'Super Workbench — Local Multi-Agent Studio'; "
+            "$lnk.Save(); "
+            "Write-Output $lnk.FullName"
+        )
+        env = dict(os.environ)
+        env["SWB_TARGET"] = target
+        env["SWB_START_PY"] = str(start_py)
+        env["SWB_WORKDIR"] = str(repo_root)
+        env["SWB_ICON"] = str(ico_path)
+        try:
+            proc = subprocess.run(
+                [ps_bin, "-NoProfile", "-NonInteractive", "-Command", ps_script],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15,
+                env=env,
+                creationflags=config.NO_WINDOW_FLAGS,
+            )
+            if proc.returncode == 0:
+                created = (proc.stdout or "").strip() or "Desktop\\Super Workbench.lnk"
+                print(f"Desktop shortcut created: {created}")
+                return 0
+            print(f"Failed to create desktop shortcut: {(proc.stderr or proc.stdout).strip()}", file=sys.stderr)
+            return 1
+        except Exception as exc:
+            print(f"Failed to create desktop shortcut: {exc}", file=sys.stderr)
+            return 1
+
+    print(f"Desktop .lnk shortcuts are Windows-only. Launch directly via: {repo_root / 'start.sh'}")
+    return 0
 
 
 def main() -> None:
@@ -242,10 +313,13 @@ def main() -> None:
     parser.add_argument("--tab", action="store_true", help="Open in a normal browser tab instead of standalone app window")
     parser.add_argument("--doctor", action="store_true", help="Run environment readiness check and exit")
     parser.add_argument("--json", action="store_true", help="Output --doctor report as JSON (for AI agents)")
+    parser.add_argument("--create-shortcut", action="store_true", help="Create a Desktop shortcut (Windows) and exit")
     args = parser.parse_args()
 
     if args.doctor:
         raise SystemExit(run_doctor(as_json=args.json))
+    if args.create_shortcut:
+        raise SystemExit(create_desktop_shortcut())
 
     url = f"http://{args.host}:{args.port}"
     tok, _ = config.get_or_create_session_token()
