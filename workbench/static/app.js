@@ -1,3 +1,15 @@
+// Strip ?token= from address bar immediately (server has already set HttpOnly cookie)
+(function stripBootstrapTokenFromUrl() {
+  try {
+    const u = new URL(window.location.href);
+    if (u.searchParams.has("token")) {
+      u.searchParams.delete("token");
+      const next = u.pathname + (u.searchParams.toString() ? "?" + u.searchParams.toString() : "") + u.hash;
+      window.history.replaceState(null, "", next);
+    }
+  } catch (e) {}
+})();
+
 const RAIL_Y = { xiu: 30, agy: 106, codex: 182, dsh: 258 };
 const ROLE_INFO = {
   xiu: { name: "我", role: "发起人" },
@@ -1936,14 +1948,36 @@ async function inspectFileDiff(relFile) {
   }
 }
 
+function showAuthBanner(show) {
+  const el = document.getElementById("authBanner");
+  const txt = document.getElementById("authBannerText");
+  if (!el) return;
+  if (show && txt) {
+    txt.textContent = t(
+      "会话未授权或已过期（403）— 为防止浏览器中其他恶意网页操控你的本机工具，所有本地接口均受会话凭证保护。请双击桌面「Super Workbench」图标，或从终端打印的带 ?token= 链接重新打开。",
+      "Session unauthorized or expired (403) — To prevent malicious websites from controlling your local tools, all local API endpoints require a session cookie. Please reopen Super Workbench from the desktop shortcut or the ?token= URL printed in your terminal."
+    );
+  }
+  el.classList.toggle("show", Boolean(show));
+}
+
 // --- API Actions (Non-overlapping polling + mutation priority) ---
 async function api(path, body = null) {
   const isPost = body !== null;
   if (isPost) mutationInFlight++;
   try {
-    const res = await fetch(path, isPost ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+    const opts = isPost
+      ? { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+      : { credentials: "same-origin" };
+    const res = await fetch(path, opts);
+    if (res.status === 403) {
+      showAuthBanner(true);
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || t("会话未授权（403）", "Unauthorized (403)"));
+    }
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "请求失败");
+    showAuthBanner(false);
     return data;
   } finally {
     if (isPost) mutationInFlight = Math.max(0, mutationInFlight - 1);
@@ -2044,7 +2078,8 @@ async function draftCommitMessage() {
   if (label) label.textContent = "起草中…";
   try {
     // Long-running read-only request: bypass mutation guard so live polling keeps flowing
-    const resp = await fetch("/api/git", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "draft" }) });
+    const resp = await fetch("/api/git", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "draft" }) });
+    if (resp.status === 403) showAuthBanner(true);
     const res = await resp.json();
     if (!resp.ok || !res.ok) throw new Error(res.error || "起草失败");
     box.value = res.message || "";
@@ -2103,7 +2138,7 @@ async function toggleExitOnClose(enabled) {
 async function quitBackendService() {
   if (!confirm(t("确定立即停止后台服务并关闭工作台？", "Stop the background service and close Super Workbench now?"))) return;
   try {
-    await fetch("/api/shutdown", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    await fetch("/api/shutdown", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: "{}" });
   } catch (e) {}
   showToast(t("后台服务已停止", "Background service stopped"));
   setTimeout(() => { try { window.close(); } catch (e) {} }, 250);
@@ -2441,6 +2476,7 @@ async function pickNativeFolder(target) {
   try {
     const resp = await fetch("/api/pick_folder", {
       method: "POST",
+      credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: isWs ? t("选择工作空间目录", "Select Workspace Directory") : t("选择本地 Skill 文件夹", "Select Local Skill Folder"),

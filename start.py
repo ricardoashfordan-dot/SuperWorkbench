@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 import webbrowser
 from pathlib import Path
@@ -143,10 +144,15 @@ def open_desktop_window(url: str, force_tab: bool = False) -> None:
     webbrowser.open(url)
 
 
-def _is_server_alive(url: str) -> bool:
+def _is_server_alive(url: str, token: str = "") -> bool:
     try:
-        with urllib.request.urlopen(f"{url}/api/live", timeout=0.45) as resp:
+        headers = {"X-Workbench-Token": token} if token else {}
+        req = urllib.request.Request(f"{url}/api/live", headers=headers)
+        with urllib.request.urlopen(req, timeout=0.45) as resp:
             return resp.status == 200
+    except urllib.error.HTTPError as exc:
+        # 403 means a Super Workbench server is already listening on this port
+        return exc.code == 403
     except Exception:
         return False
 
@@ -191,6 +197,7 @@ def run_doctor(as_json: bool = False) -> int:
     if not npx_bin:
         recommendations.append("Optional: Install Node.js (npx) if you plan to use stdio MCP tools like Playwright or GitHub.")
 
+    _, tok_source = config.get_or_create_session_token()
     report = {
         "ok": py_ok,
         "os": f"{platform.system()} {platform.release()}",
@@ -198,6 +205,7 @@ def run_doctor(as_json: bool = False) -> int:
         "git": {"installed": bool(git_bin), "path": git_bin},
         "npx": {"installed": bool(npx_bin), "path": npx_bin},
         "desktop_browser": {"installed": bool(browser_bin), "path": browser_bin},
+        "api_auth": {"enabled": True, "token_source": tok_source},
         "clis": {k: {"ready": bool(v.get("ready")), "path": v.get("path", "")} for k, v in clis.items()},
         "ollama": ollama,
         "custom_engines_count": len(custom_engines),
@@ -214,6 +222,7 @@ def run_doctor(as_json: bool = False) -> int:
         print(f"Git     : {'OK (' + git_bin + ')' if git_bin else 'Not found (optional, enables Live Git Diff)'}")
         print(f"npx     : {'OK' if npx_bin else 'Not found (optional, for stdio MCP tools)'}")
         print(f"Desktop : {'OK (' + Path(browser_bin).name + ' --app mode)' if browser_bin else 'Standard browser fallback'}")
+        print(f"Auth    : Enabled (session token: {tok_source})")
         print(f"CLIs    : {', '.join(ready_clis) if ready_clis else 'None detected'}")
         print(f"Ollama  : {'Online (' + str(len(ollama['models'])) + ' models)' if ollama['reachable'] else 'Offline / not running'}")
         if recommendations:
@@ -239,11 +248,13 @@ def main() -> None:
         raise SystemExit(run_doctor(as_json=args.json))
 
     url = f"http://{args.host}:{args.port}"
+    tok, _ = config.get_or_create_session_token()
+    auth_url = f"{url}/?token={tok}"
 
     # Single-instance check: if server is already running, just pop open the desktop window
-    if _is_server_alive(url):
+    if _is_server_alive(url, tok):
         if not args.no_browser:
-            open_desktop_window(url, force_tab=args.tab)
+            open_desktop_window(auth_url, force_tab=args.tab)
             if os.name == "nt":
                 # Keep alive briefly so background Win32 icon thread can finish painting the HWND
                 time.sleep(2.2)
@@ -252,7 +263,7 @@ def main() -> None:
     if not args.no_browser:
         def _open() -> None:
             time.sleep(0.55)
-            open_desktop_window(url, force_tab=args.tab)
+            open_desktop_window(auth_url, force_tab=args.tab)
         threading.Thread(target=_open, daemon=True).start()
 
     server.run_server(host=args.host, port=args.port)

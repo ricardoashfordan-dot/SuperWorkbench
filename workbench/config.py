@@ -1,5 +1,6 @@
 import json
 import os
+import secrets
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -23,6 +24,7 @@ ENGINES_PATH = DATA_DIR / "engines.json"
 SKILLS_STATE_PATH = DATA_DIR / "skills_state.json"
 MCP_PATH = DATA_DIR / "mcp_servers.json"
 SETTINGS_PATH = DATA_DIR / "settings.json"
+TOKEN_PATH = DATA_DIR / "session.token"
 THREADS_PATH = DATA_DIR / "threads.json"
 STATE_PATH = DATA_DIR / "state.json"
 MESSAGES_PATH = DATA_DIR / "messages.json"
@@ -146,3 +148,26 @@ def save_app_settings(patch: dict) -> dict:
         cur["exit_on_close"] = bool(patch["exit_on_close"])
     write_json(SETTINGS_PATH, cur)
     return cur
+
+
+def get_or_create_session_token() -> tuple[str, str]:
+    """Return (session_token, source_label). Never prints or logs the token value."""
+    env_tok = str(os.environ.get("SUPER_WORKBENCH_TOKEN", "") or "").strip()
+    if env_tok:
+        return env_tok, "env:SUPER_WORKBENCH_TOKEN"
+    ensure_data_dir()
+    if TOKEN_PATH.exists():
+        try:
+            existing = TOKEN_PATH.read_text(encoding="utf-8").strip()
+            if existing:
+                return existing, str(TOKEN_PATH)
+        except OSError:
+            pass
+    tok = secrets.token_urlsafe(32)
+    TOKEN_PATH.write_text(tok + "\n", encoding="utf-8")
+    if os.name != "nt":
+        try:
+            os.chmod(TOKEN_PATH, 0o600)
+        except OSError:
+            pass
+    return tok, str(TOKEN_PATH)

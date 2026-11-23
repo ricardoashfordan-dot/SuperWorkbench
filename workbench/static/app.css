@@ -310,6 +310,18 @@
     background: rgba(229, 169, 92, 0.08); font-size: 12.5px;
   }
   .disputed-bar.show { display: flex; }
+.auth-banner {
+  display: none;
+  margin: 10px 24px 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.09);
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.auth-banner.show { display: block; }
 
   /* Chat Canvas */
   .canvas-body {

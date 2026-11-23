@@ -2,6 +2,7 @@ import json
 import mimetypes
 import os
 import re
+import secrets
 import subprocess
 import sys
 import threading
@@ -9,6 +10,7 @@ import time
 import urllib.parse
 from datetime import datetime, timedelta
 from http import HTTPStatus
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -25,6 +27,15 @@ _STATE_LOCK = threading.Lock()
 _STATE_VERSION = 1
 _WS_DISK_CACHE: dict[str, dict] = {}
 _LAST_CLIENT_ACTIVITY = time.time()
+_SESSION_TOKEN: str | None = None
+_BIND_HOST: str = config.HOST
+
+
+def get_session_token() -> str:
+    global _SESSION_TOKEN
+    if not _SESSION_TOKEN:
+        _SESSION_TOKEN, _ = config.get_or_create_session_token()
+    return _SESSION_TOKEN
 
 
 def _touch_client_activity() -> None:
@@ -284,15 +295,84 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
         except ValueError:
             return {}
 
+    def _validate_host_and_origin(self, is_mutating: bool = False) -> bool:
+        host_hdr = (self.headers.get("Host") or "").strip().lower()
+        bind_host = (_BIND_HOST or config.HOST).strip().lower()
+        if bind_host != "0.0.0.0":
+            port = getattr(self.server, "server_port", config.PORT)
+            allowed = {
+                f"127.0.0.1:{port}",
+                f"localhost:{port}",
+                f"[::1]:{port}",
+                f"{bind_host}:{port}",
+            }
+            if port == 80:
+                allowed.update({"127.0.0.1", "localhost", "[::1]", bind_host})
+            if host_hdr not in allowed:
+                self._send_json(
+                    {"ok": False, "error": "forbidden — invalid Host header (DNS rebinding protection)"},
+                    HTTPStatus.FORBIDDEN,
+                )
+                return False
+
+        if is_mutating:
+            origin = (self.headers.get("Origin") or "").strip()
+            if origin:
+                orig_netloc = urllib.parse.urlparse(origin).netloc.lower()
+                if not orig_netloc or orig_netloc != host_hdr:
+                    self._send_json(
+                        {"ok": False, "error": "forbidden — cross-site Origin rejected"},
+                        HTTPStatus.FORBIDDEN,
+                    )
+                    return False
+        return True
+
+    def _authorize(self) -> bool:
+        expected = get_session_token()
+        hdr_tok = (self.headers.get("X-Workbench-Token") or "").strip()
+        if hdr_tok and secrets.compare_digest(hdr_tok, expected):
+            return True
+
+        cookie_hdr = self.headers.get("Cookie") or ""
+        if cookie_hdr:
+            jar = SimpleCookie()
+            try:
+                jar.load(cookie_hdr)
+                morsel = jar.get("swb_session")
+                if morsel and secrets.compare_digest(morsel.value.strip(), expected):
+                    return True
+            except Exception:
+                pass
+
+        self._send_json(
+            {
+                "ok": False,
+                "error": "unauthorized — open Super Workbench from the desktop shortcut or the URL printed in the terminal",
+            },
+            HTTPStatus.FORBIDDEN,
+        )
+        return False
+
     def do_GET(self) -> None:
+        if not self._validate_host_and_origin(is_mutating=False):
+            return
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path in ("/", "/index.html"):
             html_file = config.STATIC_DIR / "index.html"
             data = html_file.read_bytes()
+            qs = urllib.parse.parse_qs(parsed.query)
+            q_tok = (qs.get("token") or [""])[0].strip()
+            valid_bootstrap = bool(q_tok) and secrets.compare_digest(q_tok, get_session_token())
+
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "no-store")
+            self.send_header("Cache-Control", "no-cache")
+            if valid_bootstrap:
+                self.send_header(
+                    "Set-Cookie",
+                    f"swb_session={get_session_token()}; HttpOnly; SameSite=Strict; Path=/",
+                )
             self.end_headers()
             self.wfile.write(data)
             return
@@ -314,9 +394,13 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", ctype)
                 self.send_header("Content-Length", str(len(data)))
-                self.send_header("Cache-Control", "no-store")
+                self.send_header("Cache-Control", "no-cache")
                 self.end_headers()
                 self.wfile.write(data)
+                return
+
+        if parsed.path.startswith("/api/"):
+            if not self._authorize():
                 return
 
         if parsed.path == "/api/state":
@@ -395,7 +479,12 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
         self._send_json({"error": "Not found"}, 404)
 
     def do_POST(self) -> None:
+        if not self._validate_host_and_origin(is_mutating=True):
+            return
         parsed = urllib.parse.urlparse(self.path)
+        if parsed.path.startswith("/api/"):
+            if not self._authorize():
+                return
         data = self._read_body()
         bump_version()
         state = config.read_json(config.STATE_PATH, {"gates": {}})
@@ -974,11 +1063,21 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
 
 
 def run_server(host: str | None = None, port: int | None = None) -> None:
+    global _BIND_HOST, _SESSION_TOKEN
     config.ensure_data_dir()
     h = host or config.HOST
     p = port or config.PORT
+    _BIND_HOST = h
+    _SESSION_TOKEN, _ = config.get_or_create_session_token()
+    if h == "0.0.0.0":
+        print(
+            "WARNING: SUPER_WORKBENCH_HOST=0.0.0.0 exposes Super Workbench beyond localhost. "
+            "Host header checks are relaxed; keep your session token private!",
+            flush=True,
+        )
     srv = ThreadingHTTPServer((h, p), WorkbenchHandler)
     print(f"Super Workbench running at http://{h}:{p} (data: {config.DATA_DIR})", flush=True)
+    print(f"Open http://{h}:{p}/?token={_SESSION_TOKEN}", flush=True)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

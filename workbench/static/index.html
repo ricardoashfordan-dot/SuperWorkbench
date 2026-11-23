@@ -133,6 +133,11 @@
       </div>
     </header>
 
+    <!-- 403 Unauthorized Session Banner (Only when session cookie is missing/expired) -->
+    <div class="auth-banner" id="authBanner">
+      <span id="authBannerText">会话未授权（403）— 为防止其他网页恶意操控你的本机工具，接口需要本地会话凭证。请双击桌面「Super Workbench」图标，或从终端打印的带 ?token= 链接重新打开。</span>
+    </div>
+
     <!-- 48h Objection Arbitration Banner (Only when disputed) -->
     <div class="disputed-bar" id="disputedBanner">
       <div>

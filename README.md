@@ -129,8 +129,13 @@ SuperWorkbench/
 
 ## Security & Privacy
 
+- **Local API Session Auth + Host/Origin Protection**:
+  - Every `/api/*` endpoint requires a local session token (stored in `.workbench/session.token`, or set via `SUPER_WORKBENCH_TOKEN`). Opening via `start.py` / the desktop shortcut automatically bootstraps an `HttpOnly; SameSite=Strict` cookie (`swb_session`) and strips `?token=` from the address bar.
+  - All routes validate `Host` (preventing DNS rebinding) and non-GET routes validate `Origin` (blocking cross-site browser requests).
+  - **Threat Model**: This protects against malicious websites in your browser reaching your local API or DNS rebinding; it does **not** protect against other programs already running under the same OS user account.
+  - **Scripts / External Agents**: Read the token from `.workbench/session.token` (or set `SUPER_WORKBENCH_TOKEN`) and pass `-H "X-Workbench-Token: <token>"`.
 - **Localhost Only**: Binds strictly to `127.0.0.1` by default.
-- **Zero Repo Leaks**: All runtime conversations, workspaces, API keys, MCP env secrets, and uploaded files are stored inside `.workbench/` (listed in `.gitignore`).
+- **Zero Repo Leaks**: All runtime conversations, workspaces, API keys, MCP env secrets, session tokens, and uploaded files are stored inside `.workbench/` (listed in `.gitignore`).
 - **Safe CLI Execution**: Runs local CLIs with standard workspace-scoped permissions (never uses sandbox-bypass flags) and masks API keys / MCP tokens in UI snapshots.
 - **Non-Destructive Workspace Removal**: Removing a workspace from the sidebar never deletes files on your hard drive.
 

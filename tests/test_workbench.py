@@ -207,6 +207,82 @@ class SuperWorkbenchTestSuite(unittest.TestCase):
         self.assertTrue(doc["ok"])
         self.assertIn("clis", doc)
         self.assertIn("ollama", doc)
+        self.assertTrue(doc.get("api_auth", {}).get("enabled"))
+
+    def test_08_local_api_security(self):
+        import http.client
+        import threading
+        from http.server import ThreadingHTTPServer
+
+        token = server.get_session_token()
+        self.assertTrue(len(token) >= 16)
+
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), server.WorkbenchHandler)
+        port = srv.server_port
+        t = threading.Thread(target=srv.serve_forever, daemon=True)
+        t.start()
+        try:
+            def req(method, path, headers=None, body=None):
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                try:
+                    hdrs = dict(headers or {})
+                    if body is not None and "Content-Type" not in hdrs:
+                        hdrs["Content-Type"] = "application/json"
+                    conn.request(method, path, body=body, headers=hdrs)
+                    resp = conn.getresponse()
+                    data = resp.read().decode("utf-8", errors="replace")
+                    return resp.status, dict(resp.getheaders()), data
+                finally:
+                    conn.close()
+
+            # 1. /api/* without credentials -> 403
+            st, _, _ = req("GET", "/api/state")
+            self.assertEqual(st, 403)
+            st, _, _ = req("POST", "/api/settings", body="{}")
+            self.assertEqual(st, 403)
+
+            # 2. GET /?token=<wrong> -> 200 static HTML, NO Set-Cookie
+            st, hdrs, _ = req("GET", "/?token=wrong-token-value")
+            self.assertEqual(st, 200)
+            self.assertNotIn("Set-Cookie", hdrs)
+
+            # 3. GET /?token=<valid> -> 200 + Set-Cookie swb_session (HttpOnly; SameSite=Strict)
+            st, hdrs, _ = req("GET", f"/?token={token}")
+            self.assertEqual(st, 200)
+            set_cookie = hdrs.get("Set-Cookie", "")
+            self.assertIn(f"swb_session={token}", set_cookie)
+            self.assertIn("HttpOnly", set_cookie)
+            self.assertIn("SameSite=Strict", set_cookie)
+
+            # 4. /api/state with valid Cookie -> 200
+            st, _, _ = req("GET", "/api/state", headers={"Cookie": f"swb_session={token}"})
+            self.assertEqual(st, 200)
+
+            # 5. /api/state with valid X-Workbench-Token header -> 200
+            st, _, _ = req("GET", "/api/state", headers={"X-Workbench-Token": token})
+            self.assertEqual(st, 200)
+
+            # 6. Request with foreign Host header (DNS rebinding) -> 403
+            st, _, _ = req("GET", "/api/state", headers={"Host": f"evil.example.com:{port}", "X-Workbench-Token": token})
+            self.assertEqual(st, 403)
+            st, _, _ = req("GET", "/", headers={"Host": f"evil.example.com:{port}"})
+            self.assertEqual(st, 403)
+
+            # 7. POST with cross-site Origin (even with valid token) -> 403
+            st, _, _ = req(
+                "POST",
+                "/api/settings",
+                headers={"Origin": "https://evil.example.com", "X-Workbench-Token": token},
+                body="{}",
+            )
+            self.assertEqual(st, 403)
+
+            # 8. POST with no Origin + valid X-Workbench-Token (curl / desktop WebView) -> 200
+            st, _, _ = req("POST", "/api/settings", headers={"X-Workbench-Token": token}, body="{}")
+            self.assertEqual(st, 200)
+        finally:
+            srv.shutdown()
+            srv.server_close()
 
 
 if __name__ == "__main__":
