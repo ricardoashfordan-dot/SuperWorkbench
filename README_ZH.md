@@ -7,7 +7,7 @@
 <p align="center">
   <strong>零依赖、零额外 API 账单的本地多智能体协同工作台</strong><br/>
   <a href="https://github.com/ricardoashfordan-dot/SuperWorkbench/actions/workflows/ci.yml"><img src="https://github.com/ricardoashfordan-dot/SuperWorkbench/actions/workflows/ci.yml/badge.svg" alt="CI" /></a><br/>
-  <a href="README.md">English</a> · <a href="README_ZH.md">简体中文</a> · <a href="AGENT_INSTALL.md">AI 一键代装指南</a> · <a href="ROADMAP.md">演进路线图</a>
+  <a href="README.md">English</a> · <a href="README_ZH.md">简体中文</a> · <a href="AGENT_INSTALL.md">AI 一键代装指南</a> · <a href="COMPATIBILITY.md">CLI 兼容性矩阵</a> · <a href="ROADMAP.md">演进路线图</a>
 </p>
 
 | Obsidian 暗夜深色 | Muse 纸白浅色 |
