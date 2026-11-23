@@ -295,6 +295,7 @@ def run_pre_submit_self_check(project_dir: Path, round_num: int | None = None) -
             encoding="utf-8",
             errors="replace",
             timeout=30,
+            creationflags=config.NO_WINDOW_FLAGS,
         )
         combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
         exit_ok = proc.returncode == 0
@@ -376,11 +377,13 @@ def get_git_status_summary(ws_path: Path) -> dict:
         br = subprocess.run(
             [git_bin, "-C", str(ws_path), "rev-parse", "--abbrev-ref", "HEAD"],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=4,
+            creationflags=config.NO_WINDOW_FLAGS,
         )
         branch = br.stdout.strip() if br.returncode == 0 else ""
         st = subprocess.run(
             [git_bin, "-C", str(ws_path), "status", "--porcelain"],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5,
+            creationflags=config.NO_WINDOW_FLAGS,
         )
         files = []
         if st.returncode == 0:
@@ -409,6 +412,7 @@ def get_file_diff_or_preview(ws_path: Path, rel_path: str) -> dict:
             proc = subprocess.run(
                 [git_bin, "-C", str(ws_path), "diff", "HEAD", "--", rel_path],
                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5,
+                creationflags=config.NO_WINDOW_FLAGS,
             )
             diff_txt = (proc.stdout or "").strip()
             if diff_txt:
@@ -438,6 +442,7 @@ def _git_run(git_bin: str, ws_path: Path, args: list[str], timeout: int = 8, std
         encoding="utf-8",
         errors="replace",
         timeout=timeout,
+        creationflags=config.NO_WINDOW_FLAGS,
     )
 
 

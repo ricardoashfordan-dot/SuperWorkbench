@@ -784,6 +784,7 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                     encoding="utf-8",
                     errors="replace",
                     timeout=120,
+                    creationflags=config.NO_WINDOW_FLAGS,
                 )
                 chosen = (proc.stdout or "").strip()
                 if chosen:

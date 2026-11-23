@@ -125,6 +125,7 @@ class JobManager:
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
                         timeout=5,
+                        creationflags=config.NO_WINDOW_FLAGS,
                     )
                 else:
                     os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
@@ -389,7 +390,9 @@ class JobManager:
             "errors": "replace",
             "bufsize": 1,
         }
-        if os.name != "nt":
+        if os.name == "nt":
+            popen_kwargs["creationflags"] = config.NO_WINDOW_FLAGS
+        else:
             popen_kwargs["start_new_session"] = True
         try:
             proc = subprocess.Popen(cmd, **popen_kwargs)

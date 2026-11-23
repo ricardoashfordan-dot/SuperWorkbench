@@ -1,7 +1,10 @@
 import json
 import os
+import subprocess
 from datetime import datetime
 from pathlib import Path
+
+NO_WINDOW_FLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) if os.name == "nt" else 0
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = PACKAGE_DIR.parent

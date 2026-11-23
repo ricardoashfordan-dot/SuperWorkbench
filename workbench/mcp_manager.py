@@ -219,6 +219,7 @@ def _run_cli(bin_path: str, args: list[str], timeout: int = 18) -> tuple[bool, s
             encoding="utf-8",
             errors="replace",
             timeout=timeout,
+            creationflags=config.NO_WINDOW_FLAGS,
         )
         out = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
         return proc.returncode == 0, out[:600]
