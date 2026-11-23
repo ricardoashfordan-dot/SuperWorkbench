@@ -1530,6 +1530,7 @@ function renderChat(msgs, job) {
             <button class="btn sm" onclick="prefillInput('${t("请针对刚才的改动补充修改：", "Please make a follow-up adjustment: ")}')">${t("继续微调", "Follow Up")}</button>
           </div>`;
     }
+    const reviewResult = sender === "dsh" && ["ERROR", "PIPELINE_DONE", "DSH_VERIFY"].includes(m.type);
     return `
       <div class="msg-agent">
         <div class="agent-head">
@@ -1540,7 +1541,10 @@ function renderChat(msgs, job) {
           </div>
           <span class="agent-time">${ts}</span>
         </div>
-        <div class="agent-body">${renderMarkdown(m.body)}</div>
+        <div class="agent-body">
+          ${reviewResult ? `<p><strong>${escapeHtml(m.title || "")}</strong></p>` : ""}
+          ${renderMarkdown(m.body)}
+        </div>
         ${actions}
       </div>`;
   }).join("");
@@ -1831,22 +1835,30 @@ function render(snap, fromMutation = false) {
   document.getElementById("liveDiskAge").textContent = age < 60 ? `${age}s ${t("前更新", "ago")}` : (age < 3600 ? `${Math.floor(age/60)}m ${t("前更新", "ago")}` : "");
 
   const rms = snap.rounds_metrics || [];
-  const measured = rms.filter(x => x.fps != null || x.report_exists);
-  const latestM = measured.length ? measured[measured.length - 1] : {};
   document.getElementById("gatesCard").style.display = isGame ? "flex" : "none";
   if (isGame) {
-    const scOk = snap.self_check?.status === "PASS" || snap.self_check?.status === "PASSED_BASELINE";
-    const fpsOk = (latestM.fps ?? 0) >= 60;
-    const latOk = (latestM.input_latency_ms ?? 999) < 100;
+    const check = snap.self_check || {};
+    const round = check.round ?? rms[rms.length - 1]?.round;
+    const metrics = rms.find(row => row.round === round) || {};
+    const fpsOk = metrics.fps != null && metrics.fps >= 60;
+    const latOk = metrics.input_latency_ms != null && metrics.input_latency_ms < 100;
+    const formatMeasurement = (value, limit, unit) => {
+      if (value == null) return t("未测", "N/A");
+      const rounded = Number(value.toFixed(2));
+      const display = value < limit && rounded === limit ? `< ${limit}` : rounded;
+      return `${display} ${unit}`;
+    };
+    const scOk = check.status === "PASS";
+    const scLabel = scOk ? t("通过", "PASS") : check.status === "FAIL" ? t("未通过", "FAIL") : t("待检", "PENDING");
     const ac = snap.asset_contract || {};
     const rows = [
-      [`R${latestM.round ?? '—'} ${t("桌面帧率", "Desktop FPS")}`, latestM.fps != null ? `${latestM.fps} FPS` : t("未测", "N/A"), fpsOk],
-      [t("输入响应延迟", "Input Latency"), latestM.input_latency_ms != null ? `${latestM.input_latency_ms} ms` : t("未测", "N/A"), latOk],
-      [t("提交前自检三条", "Pre-Submit 3 Gates"), scOk ? t("通过", "PASS") : t("待检", "PENDING"), scOk],
+      [`R${round ?? '—'} ${t("桌面帧率", "Desktop FPS")}`, formatMeasurement(metrics.fps, 60, "FPS"), fpsOk],
+      [t("输入响应延迟", "Input Latency"), formatMeasurement(metrics.input_latency_ms, 100, "ms"), latOk],
+      [t("提交前自检三条", "Pre-Submit 3 Gates"), scLabel, scOk],
       [t("资产契约", "Asset Contract"), ac.status || t("待检", "PENDING"), ac.status === "PASS"]
     ];
     document.getElementById("gatesList").innerHTML = rows.map(([k, v, ok]) =>
-      `<div class="gate-row"><span style="color:var(--text-sec)">${k}</span><span style="display:inline-flex;align-items:center;gap:6px;font-family:Consolas,monospace;font-size:12px;">${v}<i class="s-dot ${ok ? 'on' : ''}"></i></span></div>`
+      `<div class="gate-row"><span style="color:var(--text-sec)">${k}</span><span style="display:inline-flex;align-items:center;gap:6px;font-family:Consolas,monospace;font-size:12px;">${escapeHtml(v)}<i class="s-dot ${ok ? 'on' : ''}"></i></span></div>`
     ).join("");
   }
 

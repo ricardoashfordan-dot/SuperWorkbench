@@ -216,7 +216,7 @@ def build_snapshot() -> dict:
         "aigc": disk.get("aigc", {}),
         "live_job": runner.JOB_MANAGER.status_dict(),
         "messages": ws_msgs,
-        "self_check": config.read_json(config.SELF_CHECK_PATH, {}),
+        "self_check": presets.load_workspace_self_check(ws_path) if is_game else {},
         "objection": config.read_json(config.OBJECTION_PATH, {}),
         "audit": config.read_json(config.AUDIT_PATH, {}),
         "verdict": config.read_json(config.VERDICT_PATH, {}),
@@ -950,29 +950,31 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 f"场景 {res.get('scene')} | 能跑={res['checks']['bootable']['passed']} 无报错={res['checks']['zero_errors']['passed']}",
                 round_num=res.get("round"),
             )
+            _WS_DISK_CACHE.clear()
             self._send_json({"ok": True, "result": res, "message": msg, "snapshot": build_snapshot()})
             return
 
         if parsed.path == "/api/dsh_verify":
-            sc = config.read_json(config.SELF_CHECK_PATH, {})
-            if sc.get("status") not in ("PASS", "PASSED_BASELINE"):
-                self._send_json({"ok": False, "error": "提交前自检三条尚未通过，禁止进入 DSH 质检"}, 400)
+            sc = presets.load_workspace_self_check(ws_path)
+            if sc.get("status") != "PASS" or sc.get("round") is None:
+                self._send_json({"ok": False, "error": "请先通过当前工作空间的提交前自检，再运行 DSH 质检"}, 400)
                 return
-            res = presets.run_dsh_verification(ws_path)
+            res = presets.run_dsh_verification(ws_path, sc["round"])
             state["gates"]["asset_contract"] = res["asset_contract"]["status"]
             state["gates"]["objective_3"] = "PASS" if res["overall_pass"] else "FAIL"
             state["stage"] = "AUDITING_AGY" if res["overall_pass"] else "CODING_CODEX"
             state["edit_lock"] = "agy" if res["overall_pass"] else "codex"
             state["updated_at"] = config.now_iso()
             config.write_json(config.STATE_PATH, state)
-            o3 = res["objective_3"]
             msg = append_message(
                 "dsh",
                 "agy" if res["overall_pass"] else "codex",
                 "DSH_VERIFY",
-                f"DSH 客观硬指标核验：{'通过' if res['overall_pass'] else '未达标'}",
-                f"FPS={o3['fps_ge_60']['value']} | 延迟={o3['input_latency_lt_100ms']['value']}ms | 契约={res['asset_contract']['status']}",
+                f"DSH 客观硬指标核验：{'通过' if res['overall_pass'] else '未通过'}",
+                presets.format_dsh_verification(res),
+                round_num=res["round"],
             )
+            _WS_DISK_CACHE.clear()
             self._send_json({"ok": True, "result": res, "message": msg, "snapshot": build_snapshot()})
             return
 
