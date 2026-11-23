@@ -671,6 +671,7 @@ class JobManager:
             rc1, reply1 = self._run_slot_blocking("planner", user1, sys1, ws_path, image_paths=img_paths)
             if self.abort_requested or rc1 != 0:
                 with self.lock:
+                    rc1 = 130 if self.abort_requested else rc1
                     self.exit_code = rc1
                 emit("error", "xiu", f"策划阶段中止或异常 (code={rc1})", reply1, "agy", "xiu")
                 return
@@ -728,43 +729,56 @@ class JobManager:
         rc2, reply2 = self._run_slot_blocking("builder", user2, sys2, ws_path, image_paths=img_paths2)
         if self.abort_requested or rc2 != 0:
             with self.lock:
+                rc2 = 130 if self.abort_requested else rc2
                 self.exit_code = rc2
             emit("error", "xiu", f"执行阶段中止或异常 (code={rc2})", reply2, "codex", "xiu")
             return
 
         emit("lock", "dsh", "执行完成并交棒 → 独立质检", reply2, "codex", "dsh")
 
-        if is_game:
-            with self.lock:
-                self.slot = "reviewer"
-                self.agent = "dsh"
-                self.live_reply = ""
-                self.current_step_desc = "正在执行 Godot 门禁与客观指标核验..."
-            sc = presets.run_pre_submit_self_check(Path(ws_path))
-            dsh_res = presets.run_dsh_verification(Path(ws_path))
-            o3 = dsh_res["objective_3"]
-            verdict_str = (
-                f"### 独立质检与门禁报告\n"
-                f"- **提交前自检三条**：`{sc.get('status')}`（场景：`{sc.get('scene')}`）\n"
-                f"- **实测帧率**：`{o3['fps_ge_60']['value']} FPS`\n"
-                f"- **输入延迟**：`{o3['input_latency_lt_100ms']['value']} ms`\n"
-                f"- **资产契约**：`{dsh_res['asset_contract']['status']}`"
-            )
-            with self.lock:
-                self.exit_code = 0 if sc.get("status") == "PASS" else 1
-            emit("pipeline_done", "xiu", "质检完成 → 请验收", verdict_str, "dsh", "xiu")
+        failure_title = "Godot 质检未通过" if is_game else "质检阶段失败"
+        try:
+            if is_game:
+                rc3, reply3 = self._run_godot_review(Path(ws_path))
+            else:
+                sys3, _, _ = self._build_prompts("reviewer", instruction, workspace, skill_ids, thread_id)
+                user3 = (
+                    f"工作空间：{workspace.get('name')} ({ws_path})\n{_workspace_brief(Path(ws_path))}\n\n"
+                    f"用户需求：{instruction}\n"
+                    f"执行方汇报：\n{reply2}\n\n"
+                    f"请对本次实现进行独立审查与风险诊断，给出简洁清晰的验收建议。"
+                )
+                rc3, reply3 = self._run_slot_blocking("reviewer", user3, sys3, ws_path)
+        except Exception as exc:
+            rc3, reply3 = 1, str(exc)
+            failure_title = "质检阶段异常"
+            self.append_log(f"{failure_title}: {exc}")
+
+        with self.lock:
+            aborted = self.abort_requested
+            self.exit_code = 130 if aborted else rc3
+        if aborted:
+            emit("error", "xiu", "质检已中止", reply3 or "用户已中止质检。", "dsh", "xiu")
+        elif rc3 != 0:
+            emit("error", "xiu", f"{failure_title} (code={rc3})", reply3 or "请查看终端日志。", "dsh", "xiu")
         else:
-            sys3, _, _ = self._build_prompts("reviewer", instruction, workspace, skill_ids, thread_id)
-            user3 = (
-                f"工作空间：{workspace.get('name')} ({ws_path})\n{_workspace_brief(Path(ws_path))}\n\n"
-                f"用户需求：{instruction}\n"
-                f"执行方汇报：\n{reply2}\n\n"
-                f"请对本次实现进行独立审查与风险诊断，给出简洁清晰的验收建议。"
-            )
-            rc3, reply3 = self._run_slot_blocking("reviewer", user3, sys3, ws_path)
-            with self.lock:
-                self.exit_code = rc3
             emit("pipeline_done", "xiu", "质检完成 → 请验收", reply3 or "质检完成", "dsh", "xiu")
+
+    def _run_godot_review(self, project_dir: Path) -> tuple[int, str]:
+        with self.lock:
+            self.slot = "reviewer"
+            self.agent = "dsh"
+            self.live_reply = ""
+            self.current_step_desc = "正在执行 Godot 门禁与客观指标核验..."
+        sc = presets.run_pre_submit_self_check(project_dir)
+        summary = f"提交前自检三条：`{sc['status']}`（场景：`{sc['scene']}`）"
+        if self.abort_requested:
+            return 130, summary
+        if sc["status"] != "PASS":
+            details = "\n".join(f"- {check['detail']}" for check in sc["checks"].values() if not check["passed"])
+            return 1, f"{summary}\n{details}"
+        result = presets.run_dsh_verification(project_dir, sc["round"])
+        return (0 if result["overall_pass"] else 1), f"{summary}\n\n{presets.format_dsh_verification(result)}"
 
     def approve_pending(self, note: str, on_event) -> tuple[bool, str]:
         with self.lock:
