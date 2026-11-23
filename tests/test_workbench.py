@@ -284,7 +284,86 @@ class SuperWorkbenchTestSuite(unittest.TestCase):
             srv.shutdown()
             srv.server_close()
 
-    def test_09_single_cli_default_role_binding(self):
+    def test_09_codex_discovery_and_fallback_tagging(self):
+        tmp_home = Path(tempfile.mkdtemp(prefix="swb_home_"))
+        orig_home = os.environ.get("HOME")
+        try:
+            os.environ["HOME"] = str(tmp_home)
+            codex_dir = tmp_home / ".codex"
+            codex_dir.mkdir(parents=True, exist_ok=True)
+            cache = codex_dir / "models_cache.json"
+
+            # 1. Valid cache -> discovered (deduped, ignores unknown fields & codex-auto-review)
+            cache.write_text(
+                '{"models": ['
+                '{"slug": "gpt-6.2-sol", "extra_vendor_field": 123},'
+                '{"slug": "gpt-6.2-sol"},'
+                '{"id": "o4-mini"},'
+                '{"slug": "codex-auto-review"},'
+                '"not-a-dict"'
+                ']}',
+                encoding="utf-8",
+            )
+            opts, src = adapters.discover_codex_models_with_source()
+            self.assertEqual(src, "discovered")
+            self.assertEqual([m["id"] for m in opts], ["gpt-6.2-sol", "o4-mini"])
+            self.assertEqual(adapters.default_model_settings()["model_sources"]["codex"], "discovered")
+
+            # 2. Malformed JSON -> fallback
+            cache.write_text("{broken json!!!", encoding="utf-8")
+            opts, src = adapters.discover_codex_models_with_source()
+            self.assertEqual(src, "fallback")
+            self.assertEqual(opts, adapters.FALLBACK_CODEX_OPTIONS)
+            self.assertEqual(adapters.default_model_settings()["model_sources"]["codex"], "fallback")
+
+            # 3. Valid JSON with missing / renamed fields -> fallback
+            cache.write_text('{"items": [{"name": "gpt-99"}]}', encoding="utf-8")
+            opts, src = adapters.discover_codex_models_with_source()
+            self.assertEqual(src, "fallback")
+            self.assertEqual(opts, adapters.FALLBACK_CODEX_OPTIONS)
+
+            # 4. Empty models array -> fallback
+            cache.write_text('{"models": []}', encoding="utf-8")
+            opts, src = adapters.discover_codex_models_with_source()
+            self.assertEqual(src, "fallback")
+            self.assertEqual(opts, adapters.FALLBACK_CODEX_OPTIONS)
+        finally:
+            if orig_home is None:
+                os.environ.pop("HOME", None)
+            else:
+                os.environ["HOME"] = orig_home
+            shutil.rmtree(tmp_home, ignore_errors=True)
+
+    def test_10_doctor_empty_path_no_clis(self):
+        import json as _json
+
+        tmp_home = Path(tempfile.mkdtemp(prefix="swb_empty_path_"))
+        try:
+            env = os.environ.copy()
+            env["PATH"] = ""
+            env["HOME"] = str(tmp_home)
+            env["SUPER_WORKBENCH_DATA_DIR"] = str(tmp_home / "data")
+            proc = subprocess.run(
+                [sys.executable, str(REPO_ROOT / "start.py"), "--doctor", "--json"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                env=env,
+                timeout=15,
+                creationflags=config.NO_WINDOW_FLAGS,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            doc = _json.loads(proc.stdout)
+            self.assertTrue(doc["ok"])
+            for cid in ("agy", "codex", "claude", "gemini", "dsh"):
+                entry = doc["clis"][cid]
+                self.assertFalse(entry["installed"], f"{cid} should not be found with empty PATH")
+                self.assertEqual(entry["version"], "not installed")
+                self.assertIn(entry["model_source"], ("fallback", "n/a"))
+        finally:
+            shutil.rmtree(tmp_home, ignore_errors=True)
+
+    def test_11_single_cli_default_role_binding(self):
         from unittest.mock import patch
 
         only_dsh = {
