@@ -453,9 +453,18 @@ def default_role_bindings() -> dict:
                 return p
         return preferred[0]
 
-    p_eng = pick(["agy", "claude", "gemini", "codex"])
-    b_eng = pick(["codex", "claude", "agy", "gemini"])
+    p_eng = pick(["agy", "claude", "gemini", "codex", "dsh"])
+    b_eng = pick(["codex", "claude", "agy", "gemini", "dsh"])
     r_eng = pick(["dsh", "agy", "codex", "claude", "gemini"])
+
+    def default_model(eng: str) -> str:
+        if eng == "agy":
+            return mcfg.get("agy_model", "gemini-4-neon-high")
+        if eng == "codex":
+            return mcfg.get("codex_model", "gpt-6.2-sol")
+        if eng == "dsh":
+            return "headless"
+        return ""
 
     return {
         "planner": {
@@ -465,7 +474,7 @@ def default_role_bindings() -> dict:
             "custom_label": "",
             "system_prompt": "",
             "engine": p_eng,
-            "model": mcfg.get("agy_model", "gemini-4-neon-high") if p_eng == "agy" else "",
+            "model": default_model(p_eng),
             "effort": "high",
         },
         "builder": {
@@ -475,7 +484,7 @@ def default_role_bindings() -> dict:
             "custom_label": "",
             "system_prompt": "",
             "engine": b_eng,
-            "model": mcfg.get("codex_model", "gpt-6.2-sol") if b_eng == "codex" else "",
+            "model": default_model(b_eng),
             "effort": mcfg.get("codex_effort", "high"),
         },
         "reviewer": {
@@ -485,7 +494,7 @@ def default_role_bindings() -> dict:
             "custom_label": "",
             "system_prompt": "",
             "engine": r_eng,
-            "model": "headless" if r_eng == "dsh" else "",
+            "model": default_model(r_eng),
             "effort": "medium",
         },
     }
