@@ -59,19 +59,24 @@ Run the zero-dependency regression test suite to verify everything is healthy:
 python -m unittest discover -s tests -v
 ```
 
-Launch Super Workbench:
-- **Windows (Desktop App Mode, no black CMD window)**: double-click `Start-SuperWorkbench.cmd` or run `pythonw start.py` (optionally create a Desktop `.lnk` shortcut pointing to `pythonw.exe` with `start.py` and `workbench/static/icon.ico`).
+Launch Super Workbench in **Desktop App Mode** (automatically opens a standalone frameless window with session-token authentication):
+- **Windows (no black CMD window)**:
+  1. Create a Desktop shortcut with the studio icon:
+     ```bash
+     python start.py --create-shortcut
+     ```
+  2. Launch via `Start-SuperWorkbench.cmd` or `pythonw start.py` (do **not** pass `--no-browser` if you want the desktop app window to open automatically).
 - **macOS / Linux**: run `./start.sh` or `python3 start.py`.
 
-Verify the local server is responding:
-- `http://127.0.0.1:8765/api/live` should return HTTP `200`.
+Verify the local server is responding (note: all `/api/*` endpoints require the local session token in `.workbench/session.token` since v1.0.1; a bare request without the token intentionally returns HTTP `403`):
+- Pass `X-Workbench-Token: <contents of .workbench/session.token>` when checking `http://127.0.0.1:8765/api/live` → should return HTTP `200`.
 
 ---
 
 ## Step 5: Hand Off to the User
 
 Tell the user:
-1. Where Super Workbench is installed and how to launch it next time.
-2. Open **`http://127.0.0.1:8765`** (or the standalone desktop window that just opened).
+1. Where Super Workbench is installed and how to launch it next time (**double-click the Desktop `Super Workbench` shortcut** or `Start-SuperWorkbench.cmd` on Windows, or `./start.sh` on macOS/Linux).
+2. **Do NOT give the user the bare URL `http://127.0.0.1:8765/`** — opening the bare URL without `?token=` will intentionally show HTTP `403` to protect local tools from untrusted browser tabs. Always let them open via the Desktop shortcut / `Start-SuperWorkbench.cmd`, or provide the full tokenized URL `http://127.0.0.1:8765/?token=<token>` (and remind them never to share the token).
 3. In **`Settings → General`**, they can customize their display name, language (`简体中文 / English`), theme (`Obsidian Dark / Muse Light`), and approval gate.
 4. In **`Settings → Roles & Engines`**, they can bind any detected CLI / API to each role and expand **Customize Role Name & System Prompt** to DIY their own specialist team!

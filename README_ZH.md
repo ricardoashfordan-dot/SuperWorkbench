@@ -21,6 +21,8 @@
 在一个极简、冷静的 Muse / Codex / Linear 风格界面中，把你本机已经装好的 AI 命令行工具（**Antigravity `agy`**、**OpenAI `codex`**、**Claude Code `claude`**、**Gemini CLI `gemini`**、**DSH**）以及 **本地 Ollama / 任意 OpenAI 兼容 API** 串成一条顺手的协作流水线——同时服务于 **软件工程开发** 与 **AIGC 漫剧 / 短片制片**。
 
 > **核心理念**：直接复用你已有的本地 CLI 订阅额度。只有 **核心执行（Builder）** 岗位需要绑定一个可改文件的本地 CLI，**策划（Planner）** 与 **质检（Reviewer）** 可以自由绑定 CLI、免费本地 Ollama 或任意云端 API。
+>
+> **适用场景**：面向代码仓库、文档工程与 AIGC 制片目录的多角色分工（读改文件、跑命令与独立审查，不替代点击桌面软件 GUI）。即使本机只装了 1 个 CLI 也能开箱跑通三角色分工；再配 1 个其他 CLI 或免费 Ollama / 云端 API 即可开启跨模型协作。
 
 ---
 

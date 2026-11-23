@@ -164,7 +164,7 @@ class SuperWorkbenchTestSuite(unittest.TestCase):
             )
             self.assertEqual(r.returncode, 0, f"JS syntax error: {r.stderr}")
 
-        forbidden = re.compile(r"决战|DeepSpaceBrawlLab|ASUS", re.IGNORECASE)
+        forbidden = re.compile(r"决战|DeepSpaceBrawlLab|深空乱斗|R133|ASUS", re.IGNORECASE)
         skip_dirs = {".workbench", "__pycache__", ".git", ".venv", "venv", "tests"}
         for root_dir, dirs, files in os.walk(REPO_ROOT):
             dirs[:] = [d for d in dirs if d not in skip_dirs]
@@ -283,6 +283,22 @@ class SuperWorkbenchTestSuite(unittest.TestCase):
         finally:
             srv.shutdown()
             srv.server_close()
+
+    def test_09_single_cli_default_role_binding(self):
+        from unittest.mock import patch
+
+        only_dsh = {
+            "agy": {"ready": False, "path": ""},
+            "codex": {"ready": False, "path": ""},
+            "claude": {"ready": False, "path": ""},
+            "gemini": {"ready": False, "path": ""},
+            "dsh": {"ready": True, "path": "dsh.CMD"},
+        }
+        with patch.object(adapters, "detect_cli_status", return_value=only_dsh):
+            roles = adapters.default_role_bindings()
+        for slot in ("planner", "builder", "reviewer"):
+            self.assertEqual(roles[slot]["engine"], "dsh")
+            self.assertEqual(roles[slot]["model"], "headless")
 
 
 if __name__ == "__main__":

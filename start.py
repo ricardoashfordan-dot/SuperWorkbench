@@ -234,6 +234,60 @@ def run_doctor(as_json: bool = False) -> int:
     return 0 if py_ok else 1
 
 
+def create_desktop_shortcut() -> int:
+    """Create a Desktop launcher shortcut so users open the standalone app window with token auth."""
+    repo_root = Path(__file__).resolve().parent
+    start_py = repo_root / "start.py"
+    ico_path = config.STATIC_DIR / "icon.ico"
+
+    if os.name == "nt":
+        py_exe = Path(sys.executable)
+        pyw_exe = py_exe.with_name("pythonw.exe")
+        target = str(pyw_exe if pyw_exe.exists() else py_exe)
+        ps_bin = shutil.which("powershell") or "powershell"
+        # Pass paths via environment variables instead of interpolating into PowerShell strings
+        ps_script = (
+            "$ws = New-Object -ComObject WScript.Shell; "
+            "$desktop = [Environment]::GetFolderPath('Desktop'); "
+            "$lnk = $ws.CreateShortcut((Join-Path $desktop 'Super Workbench.lnk')); "
+            "$lnk.TargetPath = $env:SWB_TARGET; "
+            "$lnk.Arguments = '\"' + $env:SWB_START_PY + '\"'; "
+            "$lnk.WorkingDirectory = $env:SWB_WORKDIR; "
+            "if (Test-Path $env:SWB_ICON) { $lnk.IconLocation = $env:SWB_ICON }; "
+            "$lnk.Description = 'Super Workbench — Local Multi-Agent Studio'; "
+            "$lnk.Save(); "
+            "Write-Output $lnk.FullName"
+        )
+        env = dict(os.environ)
+        env["SWB_TARGET"] = target
+        env["SWB_START_PY"] = str(start_py)
+        env["SWB_WORKDIR"] = str(repo_root)
+        env["SWB_ICON"] = str(ico_path)
+        try:
+            proc = subprocess.run(
+                [ps_bin, "-NoProfile", "-NonInteractive", "-Command", ps_script],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15,
+                env=env,
+                creationflags=config.NO_WINDOW_FLAGS,
+            )
+            if proc.returncode == 0:
+                created = (proc.stdout or "").strip() or "Desktop\\Super Workbench.lnk"
+                print(f"Desktop shortcut created: {created}")
+                return 0
+            print(f"Failed to create desktop shortcut: {(proc.stderr or proc.stdout).strip()}", file=sys.stderr)
+            return 1
+        except Exception as exc:
+            print(f"Failed to create desktop shortcut: {exc}", file=sys.stderr)
+            return 1
+
+    print(f"Desktop .lnk shortcuts are Windows-only. Launch directly via: {repo_root / 'start.sh'}")
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Super Workbench — Local Multi-Agent Orchestration Studio")
     parser.add_argument("--host", default=config.HOST, help="Bind host (default: 127.0.0.1)")
@@ -242,10 +296,13 @@ def main() -> None:
     parser.add_argument("--tab", action="store_true", help="Open in a normal browser tab instead of standalone app window")
     parser.add_argument("--doctor", action="store_true", help="Run environment readiness check and exit")
     parser.add_argument("--json", action="store_true", help="Output --doctor report as JSON (for AI agents)")
+    parser.add_argument("--create-shortcut", action="store_true", help="Create a Desktop shortcut (Windows) and exit")
     args = parser.parse_args()
 
     if args.doctor:
         raise SystemExit(run_doctor(as_json=args.json))
+    if args.create_shortcut:
+        raise SystemExit(create_desktop_shortcut())
 
     url = f"http://{args.host}:{args.port}"
     tok, _ = config.get_or_create_session_token()
