@@ -1,7 +1,14 @@
+import json
+import os
+import tempfile
+import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import config
+
+_MESSAGE_LOCK = threading.Lock()
 
 
 def default_thread_id(ws_id: str) -> str:
@@ -113,18 +120,15 @@ def auto_title_if_generic(thread_id: str, user_text: str) -> None:
 def delete_thread(ws_id: str, thread_id: str) -> bool:
     data = load_threads_data()
     ws_threads = [t for t in data["items"] if t.get("workspace_id") == ws_id]
-    if len(ws_threads) <= 1:
+    if len(ws_threads) <= 1 or not any(t["id"] == thread_id for t in ws_threads):
         return False
-    data["items"] = [t for t in data["items"] if t["id"] != thread_id]
+    data["items"] = [t for t in data["items"] if not (t.get("workspace_id") == ws_id and t["id"] == thread_id)]
     remaining = [t for t in data["items"] if t.get("workspace_id") == ws_id]
     if data["active_by_ws"].get(ws_id) == thread_id and remaining:
         data["active_by_ws"][ws_id] = remaining[0]["id"]
     save_threads_data(data)
 
-    # Remove messages belonging exclusively to the deleted thread
-    all_msgs = config.read_json(config.MESSAGES_PATH, [])
-    kept = [m for m in all_msgs if msg_thread_id(m) != thread_id]
-    config.write_json(config.MESSAGES_PATH, kept)
+    clear_messages(ws_id, thread_id)
     return True
 
 
@@ -135,17 +139,106 @@ def msg_thread_id(msg: dict) -> str:
     return default_thread_id(ws_id)
 
 
-def filter_thread_messages(all_msgs: list[dict], ws_id: str, thread_id: str) -> list[dict]:
-    return [
-        m for m in all_msgs
-        if m.get("workspace_id") == ws_id and msg_thread_id(m) == thread_id
-    ]
+def _matches_history(msg: dict, ws_id: str, thread_id: str | None) -> bool:
+    return msg.get("workspace_id", "super-workbench") == ws_id and (
+        thread_id is None or msg_thread_id(msg) == thread_id
+    )
 
 
-def set_thread_summary(thread_id: str, summary: str, compacted_count: int) -> dict | None:
+def _read_history_json(path: Path, default):
+    try:
+        with path.open(encoding="utf-8") as file:
+            return json.load(file)
+    except FileNotFoundError:
+        return default
+
+
+def _write_history_json(path: Path, data) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as file:
+            temporary = Path(file.name)
+            json.dump(data, file, ensure_ascii=False, separators=(",", ":"))
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+@contextmanager
+def _message_transaction():
+    lock_path = config.MESSAGES_PATH.with_suffix(".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with _MESSAGE_LOCK, lock_path.open("a+b") as lock:
+        # Lock a separate file so replacing messages.json never changes the lock.
+        if os.name == "nt":
+            import msvcrt
+
+            lock.seek(0)
+            msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        yield
+
+
+def _read_messages() -> list[dict]:
+    messages = _read_history_json(config.MESSAGES_PATH, [])
+    if not isinstance(messages, list) or any(not isinstance(msg, dict) for msg in messages):
+        raise ValueError("messages.json must contain an array of messages")
+    return messages
+
+
+def _message_number(msg: dict) -> int:
+    prefix, _, number = str(msg.get("id", "")).partition("-")
+    return int(number) if prefix == "msg" and number.isascii() and number.isdecimal() else 0
+
+
+def _last_message_number(messages: list[dict], sequence_path: Path) -> int:
+    saved_number = _read_history_json(sequence_path, 0)
+    if type(saved_number) is not int or saved_number < 0:
+        raise ValueError("Invalid message sequence")
+    return max(saved_number, max(map(_message_number, messages), default=0))
+
+
+def load_thread_messages(ws_id: str, thread_id: str) -> list[dict]:
+    with _message_transaction():
+        return [msg for msg in _read_messages() if _matches_history(msg, ws_id, thread_id)]
+
+
+def append_chat_message(message: dict) -> dict:
+    with _message_transaction():
+        messages = _read_messages()
+        sequence_path = config.MESSAGES_PATH.with_suffix(".sequence.json")
+        number = _last_message_number(messages, sequence_path) + 1
+        # Reserve the ID before publishing the message. A failed append can leave a gap.
+        _write_history_json(sequence_path, number)
+        message = {**message, "id": f"msg-{number:03d}"}
+        messages.append(message)
+        _write_history_json(config.MESSAGES_PATH, messages)
+        return message
+
+
+def clear_messages(ws_id: str, thread_id: str | None = None) -> None:
+    with _message_transaction():
+        messages = _read_messages()
+        kept = [msg for msg in messages if not _matches_history(msg, ws_id, thread_id)]
+        if len(kept) == len(messages):
+            return
+        sequence_path = config.MESSAGES_PATH.with_suffix(".sequence.json")
+        # Keep the high-water mark even when clearing legacy history before its first append.
+        _write_history_json(sequence_path, _last_message_number(messages, sequence_path))
+        _write_history_json(config.MESSAGES_PATH, kept)
+
+
+def set_thread_summary(thread_id: str, summary: str, compacted_count: int, *, ws_id: str | None = None) -> dict | None:
     data = load_threads_data()
     for t in data["items"]:
-        if t["id"] == thread_id:
+        if t["id"] == thread_id and (ws_id is None or t.get("workspace_id") == ws_id):
             t["summary"] = summary.strip()
             t["compacted_count"] = compacted_count
             t["compacted_at"] = config.now_iso()
@@ -155,6 +248,9 @@ def set_thread_summary(thread_id: str, summary: str, compacted_count: int) -> di
     return None
 
 
-def get_thread_by_id(thread_id: str) -> dict | None:
+def get_thread_by_id(thread_id: str, *, ws_id: str | None = None) -> dict | None:
     data = load_threads_data()
-    return next((t for t in data["items"] if t["id"] == thread_id), None)
+    return next(
+        (t for t in data["items"] if t["id"] == thread_id and (ws_id is None or t.get("workspace_id") == ws_id)),
+        None,
+    )
