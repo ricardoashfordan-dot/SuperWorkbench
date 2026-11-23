@@ -6,6 +6,7 @@
 
 <p align="center">
   <strong>Minimalist, Zero-Dependency Local Multi-Agent Orchestration Studio</strong><br/>
+  <a href="https://github.com/ricardoashfordan-dot/SuperWorkbench/actions/workflows/ci.yml"><img src="https://github.com/ricardoashfordan-dot/SuperWorkbench/actions/workflows/ci.yml/badge.svg" alt="CI" /></a><br/>
   <a href="README.md">English</a> · <a href="README_ZH.md">简体中文</a> · <a href="AGENT_INSTALL.md">AI Install Playbook</a> · <a href="ROADMAP.md">Roadmap</a>
 </p>
 
