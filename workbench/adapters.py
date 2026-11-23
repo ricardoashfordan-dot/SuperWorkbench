@@ -2,6 +2,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -10,7 +11,11 @@ from pathlib import Path
 import config
 
 _CLI_CACHE: dict = {"ts": 0.0, "data": None}
+MAX_DISCOVERED_MODELS = 50
+MAX_MODEL_ID_LEN = 120
+MAX_CACHE_BYTES = 2 * 1024 * 1024
 
+# Last verified: 2026-11-23
 DEFAULT_AGY_OPTIONS = [
     {"id": "gemini-4-neon-high", "label": "Gemini 4 Neon (High)"},
     {"id": "gemini-4-neon-xhigh", "label": "Gemini 4 Neon (XHigh)"},
@@ -23,6 +28,7 @@ DEFAULT_AGY_OPTIONS = [
     {"id": "gpt-oss-120b-medium", "label": "GPT-OSS 120B (Medium)"},
 ]
 
+# Last verified: 2026-11-23
 FALLBACK_CODEX_OPTIONS = [
     {"id": "gpt-6.2-sol", "label": "gpt-6.2-sol"},
     {"id": "gpt-6.2-astra", "label": "gpt-6.2-astra"},
@@ -31,11 +37,13 @@ FALLBACK_CODEX_OPTIONS = [
     {"id": "o4-mini", "label": "o4-mini"},
 ]
 
+# Last verified: 2026-11-23
 DEFAULT_CLAUDE_OPTIONS = [
     {"id": "claude-sonnet-4-5", "label": "Claude Sonnet 4.5"},
     {"id": "claude-opus-4-5", "label": "Claude Opus 4.5"},
 ]
 
+# Last verified: 2026-11-23
 DEFAULT_GEMINI_OPTIONS = [
     {"id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro"},
     {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash"},
@@ -55,34 +63,92 @@ def normalize_slot(name: str) -> str:
     return SLOT_ALIASES.get(str(name or "").lower(), "planner")
 
 
-def discover_codex_models() -> list[dict]:
-    cache = Path.home() / ".codex" / "models_cache.json"
-    if not cache.exists():
-        return list(FALLBACK_CODEX_OPTIONS)
+def _effective_home() -> Path:
+    env_home = os.environ.get("HOME")
+    if env_home:
+        return Path(env_home)
+    return Path.home()
+
+
+def discover_codex_models_with_source() -> tuple[list[dict], str]:
+    """Read Codex CLI's local models cache defensively; return (options, 'discovered'|'fallback')."""
+    cache = _effective_home() / ".codex" / "models_cache.json"
+    if not cache.exists() or not cache.is_file():
+        return list(FALLBACK_CODEX_OPTIONS), "fallback"
     try:
+        # defensive: cap file size before reading so a corrupted/oversized vendor cache cannot exhaust memory
+        if cache.stat().st_size > MAX_CACHE_BYTES:
+            return list(FALLBACK_CODEX_OPTIONS), "fallback"
+        # defensive: this file is vendor-controlled — never trust its JSON shape, fall back on any error
         data = json.loads(cache.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return list(FALLBACK_CODEX_OPTIONS), "fallback"
+        raw_models = data.get("models")
+        if not isinstance(raw_models, list):
+            return list(FALLBACK_CODEX_OPTIONS), "fallback"
+
         out, seen = [], set()
-        for m in data.get("models", []):
+        for m in raw_models:
+            if not isinstance(m, dict):
+                continue
             slug = m.get("slug") or m.get("id")
+            if not isinstance(slug, str):
+                continue
+            slug = slug.strip()[:MAX_MODEL_ID_LEN]
             if not slug or slug in seen or slug == "codex-auto-review":
                 continue
             seen.add(slug)
             out.append({"id": slug, "label": slug})
-        return out if out else list(FALLBACK_CODEX_OPTIONS)
+            if len(out) >= MAX_DISCOVERED_MODELS:
+                break
+        if out:
+            return out, "discovered"
+        return list(FALLBACK_CODEX_OPTIONS), "fallback"
     except Exception:
-        return list(FALLBACK_CODEX_OPTIONS)
+        return list(FALLBACK_CODEX_OPTIONS), "fallback"
+
+
+def discover_codex_models() -> list[dict]:
+    options, _ = discover_codex_models_with_source()
+    return options
+
+
+def discover_engine_models(engine_id: str) -> tuple[list[dict], str]:
+    """Return (model_options, source) where source is 'discovered', 'fallback', or 'n/a'."""
+    if engine_id == "codex":
+        return discover_codex_models_with_source()
+    if engine_id == "agy":
+        # agy has no documented local cache file and `agy models` performs a slow network RPC (>3s)
+        return list(DEFAULT_AGY_OPTIONS), "fallback"
+    if engine_id == "claude":
+        return list(DEFAULT_CLAUDE_OPTIONS), "fallback"
+    if engine_id == "gemini":
+        return list(DEFAULT_GEMINI_OPTIONS), "fallback"
+    if engine_id == "dsh":
+        return [{"id": "headless", "label": "headless (default)"}], "n/a"
+    return [], "n/a"
 
 
 def default_model_settings() -> dict:
-    codex_opts = discover_codex_models()
+    codex_opts, codex_src = discover_engine_models("codex")
+    agy_opts, agy_src = discover_engine_models("agy")
+    _, claude_src = discover_engine_models("claude")
+    _, gemini_src = discover_engine_models("gemini")
     default_codex = codex_opts[0]["id"] if codex_opts else "gpt-6.2-sol"
     return {
         "agy_model": "gemini-4-neon-high",
         "codex_model": default_codex,
         "codex_effort": "high",
-        "agy_options": list(DEFAULT_AGY_OPTIONS),
+        "agy_options": agy_opts,
         "codex_options": codex_opts,
         "effort_options": ["low", "medium", "high", "xhigh"],
+        "model_sources": {
+            "agy": agy_src,
+            "codex": codex_src,
+            "claude": claude_src,
+            "gemini": gemini_src,
+            "dsh": "n/a",
+        },
     }
 
 
@@ -100,6 +166,8 @@ def load_model_settings() -> dict:
         merged["agy_options"] = saved["agy_options"]
     if saved.get("codex_options"):
         merged["codex_options"] = saved["codex_options"]
+    # Always report live model_sources so stale saved files cannot misreport discovery status
+    merged["model_sources"] = defaults["model_sources"]
     return merged
 
 
@@ -118,38 +186,93 @@ def _find_binary(names: list[str], extra_paths: list[Path] | None = None) -> str
     return ""
 
 
-def detect_cli_status(force: bool = False) -> dict:
+def probe_cli_version(bin_path: str, timeout: float = 3.0) -> str:
+    """Safely query `<cli> --version` (falling back to `version`) with a hard timeout."""
+    if not bin_path:
+        return ""
+    for arg in ("--version", "version"):
+        # defensive: fixed argument list with no shell string interpolation prevents command injection
+        if os.name == "nt" and bin_path.lower().endswith((".cmd", ".bat")):
+            cmd = ["cmd", "/c", bin_path, arg]
+        else:
+            cmd = [bin_path, arg]
+        try:
+            # defensive: hard timeout + DEVNULL stdin ensures a hung or interactive CLI never wedges doctor
+            proc = subprocess.run(
+                cmd,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                creationflags=config.NO_WINDOW_FLAGS,
+            )
+            combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
+            first_line = next((ln.strip() for ln in combined.splitlines() if ln.strip()), "")
+            if proc.returncode == 0 and first_line:
+                return first_line[:80]
+        except subprocess.TimeoutExpired:
+            # defensive: availability — treat timed-out probe as unknown instead of retrying or hanging
+            return "unknown"
+        except Exception:
+            continue
+    return "unknown"
+
+
+def detect_cli_status(force: bool = False, probe_versions: bool = False) -> dict:
     now = time.time()
-    if not force and _CLI_CACHE["data"] is not None and (now - _CLI_CACHE["ts"]) < 30.0:
+    if (
+        not force
+        and not probe_versions
+        and _CLI_CACHE["data"] is not None
+        and (now - _CLI_CACHE["ts"]) < 30.0
+    ):
         return _CLI_CACHE["data"]
-    home = Path.home()
+
+    home = _effective_home()
+    use_extra = bool(os.environ.get("PATH", "").strip())
     local_app = Path(os.environ.get("LOCALAPPDATA", str(home / "AppData" / "Local")))
     roaming_app = Path(os.environ.get("APPDATA", str(home / "AppData" / "Roaming")))
 
     agy_path = _find_binary(
         ["agy", "agy.exe"],
-        [local_app / "agy" / "bin" / "agy.exe", home / ".local" / "bin" / "agy"],
+        [local_app / "agy" / "bin" / "agy.exe", home / ".local" / "bin" / "agy"] if use_extra else [],
     )
     codex_path = _find_binary(
         ["codex", "codex.cmd", "codex.exe"],
-        [roaming_app / "npm" / "codex.cmd", home / ".npm-global" / "bin" / "codex"],
+        [roaming_app / "npm" / "codex.cmd", home / ".npm-global" / "bin" / "codex"] if use_extra else [],
     )
     dsh_path = _find_binary(
         ["dsh", "dsh.cmd", "dsh.ps1"],
-        [Path(r"D:\nodejs\dsh.cmd"), Path(r"D:\nodejs\dsh.ps1")],
+        [roaming_app / "npm" / "dsh.cmd", Path(r"D:\nodejs\dsh.cmd"), Path(r"D:\nodejs\dsh.ps1")] if use_extra else [],
     )
     claude_path = _find_binary(["claude", "claude.cmd", "claude.exe"])
     gemini_path = _find_binary(["gemini", "gemini.cmd", "gemini.exe"])
 
-    result = {
-        "agy": {"ready": bool(agy_path), "path": agy_path},
-        "codex": {"ready": bool(codex_path), "path": codex_path},
-        "dsh": {"ready": bool(dsh_path), "path": dsh_path},
-        "claude": {"ready": bool(claude_path), "path": claude_path},
-        "gemini": {"ready": bool(gemini_path), "path": gemini_path},
+    paths = {
+        "agy": agy_path,
+        "codex": codex_path,
+        "dsh": dsh_path,
+        "claude": claude_path,
+        "gemini": gemini_path,
     }
-    _CLI_CACHE["ts"] = now
-    _CLI_CACHE["data"] = result
+    result = {}
+    for cid, cpath in paths.items():
+        _, m_src = discover_engine_models(cid)
+        entry = {
+            "ready": bool(cpath),
+            "installed": bool(cpath),
+            "path": cpath,
+            "model_source": m_src,
+        }
+        if probe_versions:
+            entry["version"] = probe_cli_version(cpath) if cpath else ""
+        result[cid] = entry
+
+    if not probe_versions:
+        _CLI_CACHE["ts"] = now
+        _CLI_CACHE["data"] = result
     return result
 
 
@@ -222,6 +345,7 @@ def delete_custom_engine(engine_id: str) -> bool:
 def list_all_engines(mask_secrets: bool = True) -> list[dict]:
     clis = detect_cli_status()
     mcfg = load_model_settings()
+    sources = mcfg.get("model_sources", {})
     builtin = [
         {
             "id": "agy",
@@ -230,6 +354,7 @@ def list_all_engines(mask_secrets: bool = True) -> list[dict]:
             "kind": "cli-agy",
             "ready": clis["agy"]["ready"],
             "path": clis["agy"]["path"],
+            "model_source": sources.get("agy", "fallback"),
             "can_edit_files": True,
             "supports_effort": False,
             "default_model": mcfg.get("agy_model", "gemini-4-neon-high"),
@@ -243,6 +368,7 @@ def list_all_engines(mask_secrets: bool = True) -> list[dict]:
             "kind": "cli-codex",
             "ready": clis["codex"]["ready"],
             "path": clis["codex"]["path"],
+            "model_source": sources.get("codex", "fallback"),
             "can_edit_files": True,
             "supports_effort": True,
             "default_model": mcfg.get("codex_model", "gpt-6.2-sol"),
@@ -256,6 +382,7 @@ def list_all_engines(mask_secrets: bool = True) -> list[dict]:
             "kind": "cli-claude",
             "ready": clis["claude"]["ready"],
             "path": clis["claude"]["path"],
+            "model_source": sources.get("claude", "fallback"),
             "can_edit_files": True,
             "supports_effort": False,
             "default_model": "claude-sonnet-4-5",
@@ -269,6 +396,7 @@ def list_all_engines(mask_secrets: bool = True) -> list[dict]:
             "kind": "cli-gemini",
             "ready": clis["gemini"]["ready"],
             "path": clis["gemini"]["path"],
+            "model_source": sources.get("gemini", "fallback"),
             "can_edit_files": True,
             "supports_effort": False,
             "default_model": "gemini-2.5-pro",
@@ -282,6 +410,7 @@ def list_all_engines(mask_secrets: bool = True) -> list[dict]:
             "kind": "cli-dsh",
             "ready": clis["dsh"]["ready"],
             "path": clis["dsh"]["path"],
+            "model_source": "n/a",
             "can_edit_files": False,
             "supports_effort": False,
             "default_model": "headless",
@@ -298,6 +427,7 @@ def list_all_engines(mask_secrets: bool = True) -> list[dict]:
         c["short"] = (c.get("name", "API")[:3]).upper()
         c["supports_effort"] = False
         if mask_secrets and c.get("api_key"):
+            # defensive: never expose raw API keys in UI/API snapshots; mask before returning
             k = c["api_key"]
             c["api_key_masked"] = (k[:4] + "****" + k[-4:]) if len(k) > 8 else "****"
             c.pop("api_key", None)

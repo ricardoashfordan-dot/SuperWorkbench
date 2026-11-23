@@ -172,7 +172,7 @@ def run_doctor(as_json: bool = False) -> int:
     git_bin = presets.find_git_bin()
     npx_bin = shutil.which("npx") or ""
     browser_bin = _find_app_browser()
-    clis = adapters.detect_cli_status(force=True)
+    clis = adapters.detect_cli_status(force=True, probe_versions=True)
     ollama = _check_ollama()
     ready_clis = [k for k, v in clis.items() if v.get("ready")]
     custom_engines = adapters.load_custom_engines()
@@ -197,7 +197,20 @@ def run_doctor(as_json: bool = False) -> int:
     if not npx_bin:
         recommendations.append("Optional: Install Node.js (npx) if you plan to use stdio MCP tools like Playwright or GitHub.")
 
+    # defensive: never print or serialize the raw session token value, only its file/env source
     _, tok_source = config.get_or_create_session_token()
+    cli_report = {}
+    for cid in ("agy", "codex", "claude", "gemini", "dsh"):
+        info = clis.get(cid, {})
+        installed = bool(info.get("ready"))
+        cli_report[cid] = {
+            "installed": installed,
+            "ready": installed,
+            "path": info.get("path", ""),
+            "version": info.get("version", "unknown") if installed else "not installed",
+            "model_source": info.get("model_source", "n/a"),
+        }
+
     report = {
         "ok": py_ok,
         "os": f"{platform.system()} {platform.release()}",
@@ -206,7 +219,7 @@ def run_doctor(as_json: bool = False) -> int:
         "npx": {"installed": bool(npx_bin), "path": npx_bin},
         "desktop_browser": {"installed": bool(browser_bin), "path": browser_bin},
         "api_auth": {"enabled": True, "token_source": tok_source},
-        "clis": {k: {"ready": bool(v.get("ready")), "path": v.get("path", "")} for k, v in clis.items()},
+        "clis": cli_report,
         "ollama": ollama,
         "custom_engines_count": len(custom_engines),
         "ready_clis": ready_clis,
@@ -223,8 +236,12 @@ def run_doctor(as_json: bool = False) -> int:
         print(f"npx     : {'OK' if npx_bin else 'Not found (optional, for stdio MCP tools)'}")
         print(f"Desktop : {'OK (' + Path(browser_bin).name + ' --app mode)' if browser_bin else 'Standard browser fallback'}")
         print(f"Auth    : Enabled (session token: {tok_source})")
-        print(f"CLIs    : {', '.join(ready_clis) if ready_clis else 'None detected'}")
         print(f"Ollama  : {'Online (' + str(len(ollama['models'])) + ' models)' if ollama['reachable'] else 'Offline / not running'}")
+        print("\nCLI Engines:")
+        for cid, info in cli_report.items():
+            status = "installed" if info["installed"] else "not found"
+            ver_part = f"version: {info['version']}" if info["installed"] else "version: -"
+            print(f"  - {cid:<7} : {status:<9} | {ver_part:<26} | model_source: {info['model_source']}")
         if recommendations:
             print("\nNext Steps / Preparation:")
             for idx, rec in enumerate(recommendations, 1):
