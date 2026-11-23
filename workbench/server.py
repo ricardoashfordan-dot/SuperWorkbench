@@ -112,12 +112,10 @@ def append_message(
     thread_id: str | None = None,
     attachments: list[dict] | None = None,
 ) -> dict:
-    msgs = config.read_json(config.MESSAGES_PATH, [])
     state = config.read_json(config.STATE_PATH, {})
     ws_id = workspace_id or config.get_active_workspace().get("id", "super-workbench")
     tid = thread_id or threads.ensure_workspace_thread(ws_id)[0]["id"]
     msg = {
-        "id": f"msg-{len(msgs) + 1:03d}",
         "workspace_id": ws_id,
         "thread_id": tid,
         "from": sender,
@@ -129,11 +127,7 @@ def append_message(
         "attachments": attachments or [],
         "ts": config.now_iso(),
     }
-    msgs.append(msg)
-    if len(msgs) > 400:
-        msgs = msgs[-400:]
-    config.write_json(config.MESSAGES_PATH, msgs)
-    return msg
+    return threads.append_chat_message(msg)
 
 
 def _is_path_allowed(target: Path) -> bool:
@@ -188,9 +182,8 @@ def build_snapshot() -> dict:
             state["current_round"] = latest_r
     tel = disk["tel"]
 
-    all_msgs = config.read_json(config.MESSAGES_PATH, [])
     active_thread, ws_threads = threads.ensure_workspace_thread(ws_id)
-    ws_msgs = threads.filter_thread_messages(all_msgs, ws_id, active_thread["id"])
+    ws_msgs = threads.load_thread_messages(ws_id, active_thread["id"])
 
     stage_concept = ""
     if is_game:
@@ -543,9 +536,7 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                     ws_data["active_id"] = new_items[0]["id"]
                 config.save_workspaces(ws_data)
                 if data.get("purge_messages", False):
-                    all_msgs = config.read_json(config.MESSAGES_PATH, [])
-                    kept = [m for m in all_msgs if m.get("workspace_id") != ws_id]
-                    config.write_json(config.MESSAGES_PATH, kept)
+                    threads.clear_messages(ws_id)
                 self._send_json({"ok": True, "snapshot": build_snapshot()})
                 return
             if action == "rename":
@@ -610,10 +601,8 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             ws_id = active_ws.get("id", "super-workbench")
             active_thread, _ = threads.ensure_workspace_thread(ws_id)
             tid = active_thread["id"]
-            all_msgs = config.read_json(config.MESSAGES_PATH, [])
-            kept = [m for m in all_msgs if not (m.get("workspace_id") == ws_id and threads.msg_thread_id(m) == tid)]
-            config.write_json(config.MESSAGES_PATH, kept)
-            threads.set_thread_summary(tid, "", 0)
+            threads.clear_messages(ws_id, tid)
+            threads.set_thread_summary(tid, "", 0, ws_id=ws_id)
             self._send_json({"ok": True, "snapshot": build_snapshot()})
             return
 

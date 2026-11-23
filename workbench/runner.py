@@ -18,27 +18,48 @@ import threads
 # Map internal slot IDs to legacy UI node IDs so existing messages & mini-rail stay seamless
 SLOT_TO_NODE = {"planner": "agy", "builder": "codex", "reviewer": "dsh"}
 NODE_TO_SLOT = {"agy": "planner", "codex": "builder", "dsh": "reviewer", "planner": "planner", "builder": "builder", "reviewer": "reviewer"}
+CHAT_ROLE_NAMES = {"xiu": "用户", "agy": "策划", "codex": "执行", "dsh": "质检"}
+CHAT_REPLY_TYPES = {"LOCK", "WAITING_APPROVAL", "DONE_SINGLE", "PIPELINE_DONE", ""}
 
 
-def _load_recent_chat_context(ws_id: str, thread_id: str | None = None, limit: int = 6) -> str:
-    all_msgs = config.read_json(config.MESSAGES_PATH, [])
+def _conversation_messages(ws_id: str, thread_id: str) -> list[dict]:
+    messages = []
+    for msg in threads.load_thread_messages(ws_id, thread_id):
+        kind = msg.get("type", "")
+        sender = msg.get("from")
+        title = msg.get("title") or ""
+        if sender == "xiu":
+            if kind not in ("TASK", "LOCK", "") or (kind == "LOCK" and title.startswith("已批准方案")):
+                continue
+        elif sender not in CHAT_ROLE_NAMES or kind not in CHAT_REPLY_TYPES:
+            continue
+        if kind == "DONE_SINGLE" and "退出码" in title:
+            continue
+        body = msg.get("body")
+        if isinstance(body, str) and body.strip():
+            messages.append(msg)
+    return messages
+
+
+def _clip_context(text: str, limit: int) -> str:
+    return text[:limit - 1] + "…" if len(text) > limit else text
+
+
+def _load_recent_chat_context(ws_id: str, thread_id: str | None = None) -> str:
     tid = thread_id or threads.ensure_workspace_thread(ws_id)[0]["id"]
-    t_obj = threads.get_thread_by_id(tid)
-    t_msgs = threads.filter_thread_messages(all_msgs, ws_id, tid)
+    t_obj = threads.get_thread_by_id(tid, ws_id=ws_id) or {}
 
     parts = []
-    if t_obj and t_obj.get("summary"):
-        parts.append(f"【本会话已压缩记忆摘要（覆盖前 {t_obj.get('compacted_count', 0)} 条对话）】\n{t_obj['summary']}")
+    if t_obj.get("summary"):
+        summary = _clip_context(t_obj["summary"].strip(), 1200)
+        parts.append(f"【本会话已压缩记忆摘要】\n{summary}")
 
-    recent = t_msgs[-limit:]
+    recent = _conversation_messages(ws_id, tid)[-6:]
     if recent:
-        role_names = {"xiu": "制作人", "agy": "策划/方案(Planner)", "codex": "核心执行(Builder)", "dsh": "独立质检(Reviewer)"}
-        lines = ["【本会话近期原话上下文】"]
+        lines = ["【本会话近期对话摘录】"]
         for m in recent:
-            sender = role_names.get(m.get("from", ""), m.get("from", ""))
-            body = (m.get("body") or "").strip()
-            if len(body) > 550:
-                body = body[:550] + "..."
+            sender = CHAT_ROLE_NAMES[m["from"]]
+            body = _clip_context(m["body"].strip(), 420)
             lines.append(f"- {sender}: {body}")
         parts.append("\n".join(lines))
     return "\n\n".join(parts)
@@ -195,8 +216,11 @@ class JobManager:
         if kind == "custom-cli":
             tpl = eng.get("command_template", "")
             one_line = " ".join(prompt.splitlines())
-            filled = tpl.replace("{cwd}", ws_path).replace("{prompt}", one_line)
-            return shlex.split(filled, posix=(os.name != "nt")), False
+            arguments = shlex.split(tpl, posix=(os.name != "nt"))
+            if os.name == "nt":
+                arguments = [arg[1:-1] if arg[:1] in ('"', "'") and arg[:1] == arg[-1:] else arg for arg in arguments]
+            values = {"{cwd}": ws_path, "{prompt}": one_line}
+            return [re.sub(r"\{(?:cwd|prompt)\}", lambda m: values[m.group()], arg) for arg in arguments], False
 
         raise ValueError(f"Unsupported CLI engine kind: {kind}")
 
@@ -377,7 +401,8 @@ class JobManager:
             self.append_log(msg)
             return 1, msg
 
-        cmd, use_stdin = self._build_cli_command(eng, model, effort, prompt, ws_path, image_paths=image_paths)
+        cli_prompt = f"【角色指令】\n{system_prompt}\n\n【任务与上下文】\n{prompt}" if system_prompt else prompt
+        cmd, use_stdin = self._build_cli_command(eng, model, effort, cli_prompt, ws_path, image_paths=image_paths)
         self.append_log(f"启动 {eng['name']} [{model}] (工作目录: {ws_path})")
         raw_tail = []
         popen_kwargs = {
@@ -400,7 +425,7 @@ class JobManager:
                 self.proc = proc
             if use_stdin and proc.stdin:
                 try:
-                    proc.stdin.write(prompt)
+                    proc.stdin.write(cli_prompt)
                     proc.stdin.close()
                 except Exception:
                     pass
@@ -496,9 +521,8 @@ class JobManager:
         def _do_compact() -> None:
             ws_path = workspace.get("path", str(config.REPO_ROOT))
             try:
-                all_msgs = config.read_json(config.MESSAGES_PATH, [])
-                t_msgs = threads.filter_thread_messages(all_msgs, ws_id, thread_id)
-                t_obj = threads.get_thread_by_id(thread_id)
+                t_msgs = _conversation_messages(ws_id, thread_id)
+                t_obj = threads.get_thread_by_id(thread_id, ws_id=ws_id)
                 prev_sum = (t_obj or {}).get("summary", "")
 
                 if not t_msgs:
@@ -507,7 +531,7 @@ class JobManager:
 
                 lines = []
                 if prev_sum:
-                    lines.append(f"[已有历史摘要]\n{prev_sum}\n")
+                    lines.append(f"[已有历史摘要]\n{_clip_context(prev_sum, 1200)}\n")
                 for m in t_msgs[-30:]:
                     who = m.get("from", "")
                     body = (m.get("body") or "").strip()
@@ -526,7 +550,7 @@ class JobManager:
                         if b:
                             bullets.append(f"- **{m.get('from', '')}**: {b}")
                     summary = "### 自动提炼记忆摘要\n" + "\n".join(bullets)
-                threads.set_thread_summary(thread_id, summary, len(t_msgs))
+                threads.set_thread_summary(thread_id, summary, len(t_msgs), ws_id=ws_id)
                 with self.lock:
                     self.exit_code = 0
                 on_done(ws_id, thread_id, summary, len(t_msgs))
@@ -575,12 +599,14 @@ class JobManager:
         skill_ids: list[str] | None = None,
         thread_id: str | None = None,
         attachments: list[dict] | None = None,
+        *,
+        history_context: str | None = None,
     ) -> tuple[str, str, list[str]]:
         ws_path = workspace.get("path", str(config.REPO_ROOT))
         ws_name = workspace.get("name", "")
         ws_id = workspace.get("id", "")
         is_aigc = workspace.get("type") == "aigc-studio"
-        chat_ctx = _load_recent_chat_context(ws_id, thread_id)
+        chat_ctx = _load_recent_chat_context(ws_id, thread_id) if history_context is None else history_context
         ws_brief = _workspace_brief(Path(ws_path))
         skills_block, mounted_names = skills.build_active_skills_prompt(ws_id, Path(ws_path), skill_ids)
         if mounted_names:
@@ -645,11 +671,15 @@ class JobManager:
             )
 
         try:
+            # Capture history before saving this turn or any same-turn handoff messages.
+            history_context = _load_recent_chat_context(ws_id, thread_id)
             if not pipeline:
                 node_id = SLOT_TO_NODE.get(slot, "agy")
                 uname = config.load_app_settings().get("user_name", "我")
-                emit("lock", node_id, f"{uname} → {slot.upper()}", instruction, "xiu", node_id, att_list=attachments)
-                sys_p, user_p, img_paths = self._build_prompts(slot, instruction, workspace, skill_ids, thread_id, attachments)
+                emit("task", node_id, f"{uname} → {slot.upper()}", instruction, "xiu", node_id, att_list=attachments)
+                sys_p, user_p, img_paths = self._build_prompts(
+                    slot, instruction, workspace, skill_ids, thread_id, attachments, history_context=history_context
+                )
                 rc, full_reply = self._run_slot_blocking(slot, user_p, sys_p, ws_path, image_paths=img_paths)
                 with self.lock:
                     self.exit_code = rc
@@ -666,8 +696,10 @@ class JobManager:
                 return
 
             # Full Auto-Pipeline: Planner -> (Optional Approval Pause) -> Builder -> Reviewer -> Xiu
-            emit("lock", "agy", "自动流转 [1/3]：策划拆解方案", instruction, "xiu", "agy", att_list=attachments)
-            sys1, user1, img_paths = self._build_prompts("planner", instruction, workspace, skill_ids, thread_id, attachments)
+            emit("task", "agy", "自动流转 [1/3]：策划拆解方案", instruction, "xiu", "agy", att_list=attachments)
+            sys1, user1, img_paths = self._build_prompts(
+                "planner", instruction, workspace, skill_ids, thread_id, attachments, history_context=history_context
+            )
             rc1, reply1 = self._run_slot_blocking("planner", user1, sys1, ws_path, image_paths=img_paths)
             if self.abort_requested or rc1 != 0:
                 with self.lock:
@@ -688,13 +720,16 @@ class JobManager:
                         "plan_body": reply1,
                         "skill_ids": list(skill_ids or []),
                         "attachments": list(attachments or []),
+                        "history_context": history_context,
                         "created_at": config.now_iso(),
                     }
                 emit("waiting_approval", "xiu", "方案已生成 · 等待确认执行", reply1, "agy", "xiu")
                 return
 
             emit("lock", "codex", "方案已生成并交棒 → 核心执行", reply1, "agy", "codex")
-            self._run_pipeline_tail(instruction, reply1, workspace, emit, skill_ids, thread_id, attachments)
+            self._run_pipeline_tail(
+                instruction, reply1, workspace, emit, skill_ids, thread_id, attachments, history_context=history_context
+            )
         finally:
             with self.lock:
                 self.running = False
@@ -712,20 +747,18 @@ class JobManager:
         thread_id: str | None = None,
         attachments: list[dict] | None = None,
         extra_note: str = "",
+        *,
+        history_context: str | None = None,
     ) -> None:
         ws_path = workspace.get("path", str(config.REPO_ROOT))
         is_game = workspace.get("type") == "godot-game"
 
-        sys2, _, img_paths2 = self._build_prompts("builder", instruction, workspace, skill_ids, thread_id, attachments)
-        att_block2, _ = self._format_attachments(attachments)
-        att_s2 = f"\n\n{att_block2}\n" if att_block2 else ""
-        note_s = f"\n\n用户审批补充说明：\n{extra_note}\n" if extra_note else ""
-        user2 = (
-            f"工作空间：{workspace.get('name')} ({ws_path})\n"
-            f"用户原始需求：{instruction}{att_s2}\n\n"
-            f"策划拆解方案：\n{plan_body}{note_s}\n\n"
-            f"请直接在工作区中完成实现与自检验证，完成后用清晰的中文 Markdown 汇报改动文件、核心逻辑与测试结果。"
+        sys2, user2, img_paths2 = self._build_prompts(
+            "builder", instruction, workspace, skill_ids, thread_id, attachments, history_context=history_context
         )
+        user2 += f"\n\n策划拆解方案：\n{plan_body}"
+        if extra_note:
+            user2 += f"\n\n用户审批补充说明：\n{extra_note}"
         rc2, reply2 = self._run_slot_blocking("builder", user2, sys2, ws_path, image_paths=img_paths2)
         if self.abort_requested or rc2 != 0:
             with self.lock:
@@ -741,13 +774,10 @@ class JobManager:
             if is_game:
                 rc3, reply3 = self._run_godot_review(Path(ws_path))
             else:
-                sys3, _, _ = self._build_prompts("reviewer", instruction, workspace, skill_ids, thread_id)
-                user3 = (
-                    f"工作空间：{workspace.get('name')} ({ws_path})\n{_workspace_brief(Path(ws_path))}\n\n"
-                    f"用户需求：{instruction}\n"
-                    f"执行方汇报：\n{reply2}\n\n"
-                    f"请对本次实现进行独立审查与风险诊断，给出简洁清晰的验收建议。"
+                sys3, user3, _ = self._build_prompts(
+                    "reviewer", instruction, workspace, skill_ids, thread_id, history_context=history_context
                 )
+                user3 += f"\n\n执行方汇报：\n{reply2}\n\n请结合汇报给出简洁清晰的验收建议。"
                 rc3, reply3 = self._run_slot_blocking("reviewer", user3, sys3, ws_path)
         except Exception as exc:
             rc3, reply3 = 1, str(exc)
@@ -827,6 +857,7 @@ class JobManager:
                     tid,
                     appr.get("attachments"),
                     extra_note=note_txt,
+                    history_context=appr["history_context"],
                 )
             finally:
                 with self.lock:

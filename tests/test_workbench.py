@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import shutil
@@ -5,7 +6,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest import mock
 from unittest.mock import Mock, patch
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -28,6 +31,187 @@ import threads      # noqa: E402
 
 def tearDownModule():
     shutil.rmtree(_TEST_TMP_DIR, ignore_errors=True)
+
+
+class ConversationTestSuite(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.project = Path(temporary.name)
+        paths = mock.patch.multiple(
+            config,
+            MESSAGES_PATH=self.project / "messages.json",
+            THREADS_PATH=self.project / "threads.json",
+            STATE_PATH=self.project / "state.json",
+            NEXT_FOR_CODEX_PATH=self.project / "NEXT_FOR_CODEX.md",
+        )
+        paths.start()
+        self.addCleanup(paths.stop)
+        self.workspace = {"id": "workspace-a", "name": "Project", "path": str(self.project)}
+        self.thread = threads.ensure_workspace_thread(self.workspace["id"])[0]["id"]
+
+    def _seed_context(self):
+        ws_id = self.workspace["id"]
+        threads.clear_messages(ws_id, self.thread)
+        threads.set_thread_summary(self.thread, "Saved decision " + "s" * 1500 + "summary overflow", 1, ws_id=ws_id)
+        server.append_message("xiu", "agy", "LOCK", "Legacy task", "Previous requirement", workspace_id=ws_id, thread_id=self.thread)
+        server.append_message("agy", "xiu", "DONE_SINGLE", "Done", "Previous reply " + "r" * 600 + "reply overflow",
+                              workspace_id=ws_id, thread_id=self.thread)
+        server.append_message("agy", "xiu", "COMPACT", "Summary saved", "Internal compaction event",
+                              workspace_id=ws_id, thread_id=self.thread)
+        server.append_message("xiu", "agy", "TASK", "Other thread", "Other thread only",
+                              workspace_id=ws_id, thread_id="other-thread")
+        server.append_message("xiu", "agy", "TASK", "Other workspace", "Other workspace only",
+                              workspace_id="workspace-b", thread_id=self.thread)
+
+    def _assert_prompt_context(self, prompt, instruction):
+        for expected in ("Saved decision", "Previous requirement", "Previous reply"):
+            self.assertIn(expected, prompt)
+        for excluded in ("summary overflow", "reply overflow", "Internal compaction event",
+                         "Other thread only", "Other workspace only"):
+            self.assertNotIn(excluded, prompt)
+        self.assertEqual(prompt.count(instruction), 1)
+
+    def test_single_cli_transports_include_persona_and_bounded_thread_context(self):
+        for engine in ("agy", "codex", "claude", "gemini", "dsh", "custom"):
+            with self.subTest(engine=engine):
+                self._seed_context()
+                instruction = "Follow up on the earlier decision"
+                persona = 'DIY role: use "strict" terminology'
+                role = {"engine": engine, "system_prompt": persona}
+                engine_config = {"name": engine, "kind": f"cli-{engine}", "ready": True, "path": engine}
+                if engine == "custom":
+                    engine_config.update(kind="custom-cli", command_template='example --prompt "{prompt}"')
+                process = mock.Mock(stdout=["Follow-up reply\n"])
+                process.wait.return_value = 0
+                manager = runner.JobManager()
+                with (
+                    mock.patch.object(adapters, "load_role_bindings", return_value={"reviewer": role}),
+                    mock.patch.object(adapters, "get_engine_by_id", return_value=engine_config),
+                    mock.patch.object(skills, "build_active_skills_prompt", return_value=("", [])),
+                    mock.patch.object(runner.subprocess, "Popen", return_value=process) as launch,
+                ):
+                    manager._worker("reviewer", instruction, False, self.workspace, server._on_job_event, thread_id=self.thread)
+
+                launch.assert_called_once()
+                if os.name == "nt":
+                    self.assertEqual(launch.call_args.kwargs["creationflags"], config.NO_WINDOW_FLAGS)
+                command = launch.call_args.args[0]
+                if engine in ("codex", "claude"):
+                    prompt = process.stdin.write.call_args.args[0]
+                else:
+                    prompt = command[-1]
+                self.assertIn(persona, prompt)
+                self._assert_prompt_context(prompt, instruction)
+                self.assertEqual(manager.exit_code, 0)
+
+    def test_pipeline_and_approval_resume_pass_same_history_to_cli_and_api(self):
+        roles = {
+            "planner": {"engine": "agy", "system_prompt": "Planner persona"},
+            "builder": {"engine": "codex", "system_prompt": "Builder persona"},
+            "reviewer": {"engine": "api", "system_prompt": "Reviewer persona"},
+        }
+        engines = {
+            "agy": {"name": "Antigravity", "kind": "cli-agy", "path": "agy", "ready": True},
+            "codex": {"name": "Codex", "kind": "cli-codex", "path": "codex", "ready": True},
+            "api": {"name": "API", "kind": "openai-compat"},
+        }
+        for approval in (False, True):
+            with self.subTest(approval=approval):
+                self._seed_context()
+                instruction = "Implement the reported issue"
+                planner = mock.Mock(stdout=["Planning handoff\n"])
+                planner.wait.return_value = 0
+                builder = mock.Mock(stdout=["Build report\n"])
+                builder.wait.return_value = 0
+                manager = runner.JobManager()
+                with (
+                    mock.patch.object(config, "load_app_settings", return_value={"approve_before_build": approval}),
+                    mock.patch.object(adapters, "load_role_bindings", return_value=roles),
+                    mock.patch.object(adapters, "get_engine_by_id", side_effect=lambda name, **_: engines[name]),
+                    mock.patch.object(skills, "build_active_skills_prompt", return_value=("", [])),
+                    mock.patch.object(runner.subprocess, "Popen", side_effect=[planner, builder]) as cli,
+                    mock.patch.object(adapters, "stream_openai_compat", return_value=(0, "Review result")) as api,
+                ):
+                    manager._worker("planner", instruction, True, self.workspace, server._on_job_event, thread_id=self.thread)
+                    if approval:
+                        self.assertEqual(cli.call_count, 1)
+                        api.assert_not_called()
+                        with mock.patch.object(runner.threading, "Thread") as thread:
+                            thread.side_effect = lambda *, target, daemon: mock.Mock(start=target)
+                            ok, _ = manager.approve_pending("Approval note", server._on_job_event)
+                        self.assertTrue(ok)
+                self.assertEqual(cli.call_count, 2)
+                api.assert_called_once()
+                planner_prompt = cli.call_args_list[0].args[0][-1]
+                builder_prompt = builder.stdin.write.call_args.args[0]
+                reviewer_prompt = api.call_args.kwargs["user_prompt"]
+                for prompt in (planner_prompt, builder_prompt, reviewer_prompt):
+                    self._assert_prompt_context(prompt, instruction)
+                self.assertIn("Planner persona", planner_prompt)
+                self.assertIn("Builder persona", builder_prompt)
+                self.assertIn("Planning handoff", builder_prompt)
+                self.assertIn("Build report", reviewer_prompt)
+                self.assertEqual(api.call_args.kwargs["system_prompt"], "Reviewer persona")
+                if approval:
+                    self.assertIn("Approval note", builder_prompt)
+                self.assertEqual(manager.exit_code, 0)
+
+    def test_interleaved_history_preserves_legacy_rows_and_ids_across_restart(self):
+        a, b = self.workspace["id"], "workspace-b"
+        legacy = [
+            {"id": "msg-401", "workspace_id": a, "body": "legacy A"},
+            {"id": "msg-401", "workspace_id": b, "body": "legacy B"},
+        ]
+        config.write_json(config.MESSAGES_PATH, legacy)
+        new_ids = []
+        for index in range(405):
+            for workspace in (a, b):
+                message = server.append_message(
+                    "xiu", "agy", "TASK", "Request", f"message {index}",
+                    workspace_id=workspace, thread_id=threads.default_thread_id(workspace),
+                )
+                new_ids.append(int(message["id"].split("-")[1]))
+        self.assertEqual(new_ids, list(range(402, 1212)))
+        self.assertEqual(config.read_json(config.MESSAGES_PATH, [])[:2], legacy)
+
+        script = """
+import json
+import server
+import threads
+histories = [threads.load_thread_messages(ws, threads.default_thread_id(ws))
+             for ws in ("workspace-a", "workspace-b")]
+for ws in ("workspace-a", "workspace-b"):
+    threads.clear_messages(ws)
+message = server.append_message("xiu", "agy", "TASK", "Follow up", "After restart",
+                                workspace_id="workspace-a", thread_id="default-workspace-a")
+print(json.dumps([[len(rows), rows[0]["body"], rows[1]["body"]] for rows in histories] + [message["id"]]))
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script], cwd=WORKBENCH_DIR, capture_output=True, text=True,
+            encoding="utf-8", env={**os.environ, "SUPER_WORKBENCH_DATA_DIR": str(self.project)},
+            check=True, timeout=20, creationflags=config.NO_WINDOW_FLAGS,
+        )
+        self.assertEqual(
+            json.loads(result.stdout),
+            [[406, "legacy A", "message 0"], [406, "legacy B", "message 0"], "msg-1212"],
+        )
+
+    def test_concurrent_appends_after_removing_legacy_history(self):
+        ws_id = self.workspace["id"]
+        config.write_json(config.MESSAGES_PATH, [{"id": "msg-401", "workspace_id": ws_id, "body": "legacy"}])
+        threads.clear_messages(ws_id, self.thread)
+
+        def append(index):
+            return server.append_message(
+                "xiu", "agy", "TASK", "Request", str(index), workspace_id=ws_id, thread_id=self.thread,
+            )
+
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            created = list(pool.map(append, range(16)))
+        saved = threads.load_thread_messages(ws_id, self.thread)
+        self.assertEqual({m["body"] for m in saved}, {m["body"] for m in created})
+        self.assertEqual([int(m["id"].split("-")[1]) for m in saved], list(range(402, 418)))
 
 
 class PipelineReviewTests(unittest.TestCase):
