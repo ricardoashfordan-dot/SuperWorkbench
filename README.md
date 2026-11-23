@@ -6,7 +6,8 @@
 
 <p align="center">
   <strong>Minimalist, Zero-Dependency Local Multi-Agent Orchestration Studio</strong><br/>
-  <a href="README.md">English</a> · <a href="README_ZH.md">简体中文</a> · <a href="AGENT_INSTALL.md">AI Install Playbook</a> · <a href="ROADMAP.md">Roadmap</a>
+  <a href="https://github.com/ricardoashfordan-dot/SuperWorkbench/actions/workflows/ci.yml"><img src="https://github.com/ricardoashfordan-dot/SuperWorkbench/actions/workflows/ci.yml/badge.svg" alt="CI" /></a><br/>
+  <a href="README.md">English</a> · <a href="README_ZH.md">简体中文</a> · <a href="AGENT_INSTALL.md">AI Install Playbook</a> · <a href="COMPATIBILITY.md">Compatibility</a> · <a href="ROADMAP.md">Roadmap</a>
 </p>
 
 | Obsidian Dark | Muse Paper Light |
@@ -21,6 +22,8 @@
 Orchestrate your local AI CLIs (**Antigravity `agy`**, **OpenAI `codex`**, **Claude Code `claude`**, **Gemini CLI `gemini`**, **DSH**) alongside **Ollama** and any **OpenAI-compatible API** inside one calm, Muse / Codex / Linear-inspired workspace — built for both **Software Engineering** and **AIGC Production Pipelines**.
 
 > **Core Philosophy**: Reuse the local AI CLI subscriptions you already pay for. Only the **Core Builder** slot needs a local file-editing CLI; **Planner** and **Reviewer** can freely bind to any CLI, local Ollama model, or cloud API.
+>
+> **Best For**: Multi-agent coding, code review, and AIGC asset pipelines inside real project directories (CLI/file workflows — not a desktop GUI clicker). Works out of the box even with a single installed CLI, and shines once you pair 2+ CLIs or a CLI + Ollama/API.
 
 ---
 
