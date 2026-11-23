@@ -32,7 +32,7 @@ Add your directory initializer or asset scanner in `workbench/presets.py` and ex
 ## Local Verification Before PR
 
 ```bash
-python -m py_compile start.py workbench/*.py
+python -m unittest discover -s tests -v
 ```
 
-Open `http://127.0.0.1:8765`, verify both Dark and Light themes, and ensure zero console errors.
+Open `http://127.0.0.1:8765`, verify both Dark and Light themes (and Chinese / English UI), and ensure zero console errors.

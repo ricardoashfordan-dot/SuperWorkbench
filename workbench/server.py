@@ -24,6 +24,12 @@ import threads   # noqa: E402
 _STATE_LOCK = threading.Lock()
 _STATE_VERSION = 1
 _WS_DISK_CACHE: dict[str, dict] = {}
+_LAST_CLIENT_ACTIVITY = time.time()
+
+
+def _touch_client_activity() -> None:
+    global _LAST_CLIENT_ACTIVITY
+    _LAST_CLIENT_ACTIVITY = time.time()
 
 
 def bump_version() -> int:
@@ -314,10 +320,12 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 return
 
         if parsed.path == "/api/state":
+            _touch_client_activity()
             self._send_json(build_snapshot())
             return
 
         if parsed.path == "/api/live":
+            _touch_client_activity()
             self._send_json({
                 "version": get_version(),
                 "live_job": runner.JOB_MANAGER.status_dict(),
@@ -765,6 +773,27 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             updated = config.save_app_settings(data if isinstance(data, dict) else {})
             bump_version()
             self._send_json({"ok": True, "settings": updated, "snapshot": build_snapshot()})
+            return
+
+        if parsed.path == "/api/client_closed":
+            closed_ts = time.time()
+            if config.load_app_settings().get("exit_on_close"):
+                def _maybe_shutdown() -> None:
+                    time.sleep(4.0)
+                    # Only exit if no window reconnected (e.g. via F5 refresh) and no job is running
+                    if _LAST_CLIENT_ACTIVITY <= closed_ts and not runner.JOB_MANAGER.running:
+                        os._exit(0)
+                threading.Thread(target=_maybe_shutdown, daemon=True).start()
+            self._send_json({"ok": True})
+            return
+
+        if parsed.path == "/api/shutdown":
+            runner.JOB_MANAGER.abort()
+            self._send_json({"ok": True})
+            def _do_quit() -> None:
+                time.sleep(0.3)
+                os._exit(0)
+            threading.Thread(target=_do_quit, daemon=True).start()
             return
 
         if parsed.path == "/api/pick_folder":

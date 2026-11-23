@@ -118,6 +118,7 @@ def load_app_settings() -> dict:
         "approve_before_build": False,
         "user_name": "我",
         "lang": "zh",
+        "exit_on_close": False,
     }
     raw = read_json(SETTINGS_PATH, {})
     if not isinstance(raw, dict):
@@ -128,6 +129,7 @@ def load_app_settings() -> dict:
         "approve_before_build": bool(raw.get("approve_before_build", False)),
         "user_name": uname,
         "lang": lang,
+        "exit_on_close": bool(raw.get("exit_on_close", False)),
     }
 
 
@@ -140,5 +142,7 @@ def save_app_settings(patch: dict) -> dict:
         cur["user_name"] = uname or "我"
     if "lang" in patch:
         cur["lang"] = "en" if str(patch.get("lang", "zh")).lower() == "en" else "zh"
+    if "exit_on_close" in patch:
+        cur["exit_on_close"] = bool(patch["exit_on_close"])
     write_json(SETTINGS_PATH, cur)
     return cur

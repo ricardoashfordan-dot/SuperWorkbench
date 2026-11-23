@@ -90,16 +90,24 @@ SuperWorkbench/
 │   ├── aigc-storyboard/
 │   ├── code-review-strict/
 │   └── git-commit-release/
-├── workbench/
-│   ├── config.py                # Dynamic paths, JSON state & app settings
-│   ├── adapters.py              # Local CLI detection, model discovery & SSE API client
-│   ├── threads.py               # Per-workspace multi-thread conversations & memory
-│   ├── skills.py                # 4-layer SKILL.md discovery, CRUD & prompt injection
-│   ├── mcp_manager.py           # Visual MCP registry & 1-click CLI sync
-│   ├── presets.py               # Git Diff, AIGC Studio, and Godot preset scanners
-│   ├── runner.py                # JobManager, stream parser & optional approval gate
-│   ├── server.py                # Local ThreadingHTTPServer REST & Range media API
-│   └── static/index.html        # Single-file dual-theme Muse/Codex UI
+├── tests/
+│   └── test_workbench.py        # Standard-library automated regression test suite
+└── workbench/
+    ├── config.py                # Dynamic paths, JSON state & app settings
+    ├── adapters.py              # Local CLI detection, model discovery & SSE API client
+    ├── threads.py               # Per-workspace multi-thread conversations & memory
+    ├── skills.py                # 4-layer SKILL.md discovery, CRUD & prompt injection
+    ├── mcp_manager.py           # Visual MCP registry & 1-click CLI sync
+    ├── presets.py               # Git Diff, AIGC Studio, and Godot preset scanners
+    ├── runner.py                # JobManager, stream parser & optional approval gate
+    ├── server.py                # Local ThreadingHTTPServer REST & Range media API
+    └── static/                  # Zero-build modular dual-theme UI & desktop assets
+        ├── index.html
+        ├── app.css
+        ├── app.js
+        ├── icon.svg
+        ├── icon.ico
+        └── manifest.json
 └── .workbench/                  # Local runtime data (gitignored, never committed)
 ```
 
