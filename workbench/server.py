@@ -291,6 +291,28 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             self.wfile.write(data)
             return
 
+        static_map = {
+            "/icon.svg": ("icon.svg", "image/svg+xml"),
+            "/icon.ico": ("icon.ico", "image/x-icon"),
+            "/favicon.ico": ("icon.ico", "image/x-icon"),
+            "/icon-256.png": ("icon-256.png", "image/png"),
+            "/manifest.json": ("manifest.json", "application/manifest+json; charset=utf-8"),
+            "/app.css": ("app.css", "text/css; charset=utf-8"),
+            "/app.js": ("app.js", "application/javascript; charset=utf-8"),
+        }
+        if parsed.path in static_map:
+            fname, ctype = static_map[parsed.path]
+            sfile = config.STATIC_DIR / fname
+            if sfile.exists():
+                data = sfile.read_bytes()
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(data)
+                return
+
         if parsed.path == "/api/state":
             self._send_json(build_snapshot())
             return
@@ -743,6 +765,32 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             updated = config.save_app_settings(data if isinstance(data, dict) else {})
             bump_version()
             self._send_json({"ok": True, "settings": updated, "snapshot": build_snapshot()})
+            return
+
+        if parsed.path == "/api/pick_folder":
+            title = str(data.get("title", "选择文件夹 / Select Folder")).strip()
+            init_dir = str(data.get("initial_dir", "") or ws_path)
+            script = (
+                "import sys, tkinter as tk; from tkinter import filedialog as fd; "
+                "root = tk.Tk(); root.withdraw(); root.attributes('-topmost', True); "
+                "p = fd.askdirectory(title=sys.argv[1], initialdir=sys.argv[2], mustexist=False); "
+                "root.destroy(); print(p or '')"
+            )
+            try:
+                proc = subprocess.run(
+                    [sys.executable, "-c", script, title, init_dir],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=120,
+                )
+                chosen = (proc.stdout or "").strip()
+                if chosen:
+                    chosen = str(Path(chosen))
+                self._send_json({"ok": True, "path": chosen})
+            except Exception as exc:
+                self._send_json({"ok": False, "error": str(exc)}, 500)
             return
 
         if parsed.path == "/api/approve":

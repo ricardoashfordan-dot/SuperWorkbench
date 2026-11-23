@@ -1,0 +1,28 @@
+{
+  "name": "Super Workbench",
+  "short_name": "SuperWorkbench",
+  "description": "Minimalist Local Multi-Agent Orchestration Studio",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0c0e",
+  "theme_color": "#0b0c0e",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-256.png",
+      "sizes": "256x256",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.ico",
+      "sizes": "256x256 64x64 48x48 32x32 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}

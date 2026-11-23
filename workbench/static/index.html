@@ -3,6 +3,11 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" id="metaThemeColor" content="#0c0d10" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<link rel="icon" type="image/svg+xml" href="/icon.svg" />
+<link rel="alternate icon" href="/icon.ico" />
+<link rel="manifest" href="/manifest.json" />
 <title>Super Workbench</title>
 <style>
   :root, [data-theme="dark"] {
@@ -1126,13 +1131,11 @@
   <aside class="sidebar" id="sidebar">
     <div class="sb-head">
       <div class="brand">
-        <div class="brand-mark">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-        </div>
+        <img src="/icon.svg" width="22" height="22" alt="Logo" style="border-radius:6px;display:block;flex-shrink:0;" />
         <span>Super Workbench</span>
         <span class="brand-tag">4.0</span>
       </div>
-      <button class="icon-btn" title="收起侧栏" onclick="toggleSidebar()">
+      <button class="icon-btn" title="收起侧栏 (Ctrl+B)" onclick="toggleSidebar()">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></svg>
       </button>
     </div>
@@ -1479,7 +1482,10 @@
     </div>
     <div class="field">
       <label>本地目录路径（若不存在将自动创建）</label>
-      <input id="newWsPath" placeholder="例如：E:\Projects\MyWorkspace" />
+      <div style="display:flex;gap:6px;">
+        <input id="newWsPath" style="flex:1;" placeholder="例如：E:\Projects\MyWorkspace" />
+        <button class="btn sm" type="button" id="btnPickWsFolder" onclick="pickNativeFolder('ws')">浏览…</button>
+      </div>
     </div>
     <div class="field" id="wsTypeField">
       <label>空间类型</label>
@@ -1663,8 +1669,9 @@
         <!-- Inline Import Local Skill Form -->
         <div class="insp-card" id="skillImportBox" style="display:none;">
           <div class="insp-card-title">导入本地已有 Skill（支持 SKILL.md 文件或技能文件夹路径）</div>
-          <div style="display:flex;gap:8px;">
+          <div style="display:flex;gap:6px;">
             <input id="importSkillPath" style="flex:1;background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:12.5px;" placeholder="粘贴本地技能文件夹路径或 SKILL.md 绝对路径，如 E:\my-skills\storyboard" />
+            <button class="btn sm" type="button" id="btnPickSkillFolder" onclick="pickNativeFolder('skill')">浏览…</button>
             <button class="btn sm solid" onclick="submitImportSkill()">一键导入</button>
           </div>
         </div>
@@ -1908,6 +1915,8 @@ function applyTheme(theme) {
   }
   document.getElementById("themeOptDark")?.classList.toggle("solid", theme === "dark");
   document.getElementById("themeOptLight")?.classList.toggle("solid", theme === "light");
+  const metaTc = document.getElementById("metaThemeColor");
+  if (metaTc) metaTc.setAttribute("content", theme === "dark" ? "#0c0d10" : "#f5f4f0");
 }
 function toggleTheme() {
   const cur = document.documentElement.getAttribute("data-theme") || "dark";
@@ -2091,6 +2100,8 @@ const STATIC_I18N = [
   ["#skillCreateBox button[onclick*='toggleSkillCreateBox(false)']", "取消", "Cancel"],
   ["#skillCreateBox button[onclick*='submitCreateSkill']", "创建并启用", "Create & Enable"],
   ["#skillImportBox .insp-card-title", "导入本地已有 Skill（支持 SKILL.md 文件或技能文件夹路径）", "Import Local Skill (Path to SKILL.md or skill folder)"],
+  ["#btnPickSkillFolder", "浏览…", "Browse…"],
+  ["#btnPickWsFolder", "浏览…", "Browse…"],
   ["#skillImportBox button[onclick*='submitImportSkill']", "一键导入", "Import"],
   // Pane 2: Roles
   ["#pane-roles details.explain-fold > summary > span:first-child", "ⓘ 如何分配这三个角色？点此查看说明", "ⓘ How to assign the three role slots? Click to expand"],
@@ -3627,6 +3638,7 @@ function render(snap, fromMutation = false) {
 
   // Mini Relay Rail Nodes
   syncRailHighlight();
+  updateDesktopTitleAndNotify(job);
 
   // Messages + Mini Paper Plane Trigger
   const msgs = snap.messages || [];
@@ -3795,6 +3807,7 @@ async function refreshAll() {
 }
 
 async function handlePrimarySend() {
+  requestDesktopNotifPerm();
   if (latestSnap?.live_job?.running) {
     await abortJob();
     return;
@@ -4144,11 +4157,142 @@ async function launchGame() {
   catch (e) { showToast(e.message); }
 }
 
+// --- Desktop App Capabilities: Native Notifications, Shortcuts & OS Folder Picker ---
+let _wasJobRunning = false;
+let _lastNotifiedApprId = "";
+
+function requestDesktopNotifPerm() {
+  if ("Notification" in window && Notification.permission === "default") {
+    try { Notification.requestPermission(); } catch (e) {}
+  }
+}
+
+function notifyDesktop(title, body) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  try {
+    const n = new Notification(title, {
+      body: String(body || "").slice(0, 140),
+      icon: "/icon-256.png",
+      silent: false
+    });
+    n.onclick = () => { window.focus(); n.close(); };
+  } catch (e) {}
+}
+
+function updateDesktopTitleAndNotify(job) {
+  const running = Boolean(job?.running);
+  const appr = job?.pending_approval;
+  if (running) {
+    const ag = (job.agent || "AI").toUpperCase();
+    document.title = `● ${ag} (${job.elapsed_seconds || 0}s) — Super Workbench`;
+  } else if (appr && appr.id) {
+    document.title = t("✦ 待批准执行 — Super Workbench", "✦ Approval Needed — Super Workbench");
+    if (_lastNotifiedApprId !== appr.id) {
+      _lastNotifiedApprId = appr.id;
+      notifyDesktop(
+        t("方案已就绪 · 等待批准执行", "Plan Ready · Approval Needed"),
+        t("点击切回工作台确认方案并交棒给执行方", "Click to return to Super Workbench and approve handoff")
+      );
+    }
+  } else if (_wasJobRunning && !running) {
+    const ok = (job?.exit_code ?? 0) === 0;
+    if (document.hidden) {
+      document.title = `${ok ? "✓" : "⚠"} ${t("任务已完成 — Super Workbench", "Task Finished — Super Workbench")}`;
+    } else {
+      document.title = "Super Workbench";
+    }
+    notifyDesktop(
+      ok ? t("任务执行完成", "Task Completed") : t("任务中止或异常", "Task Stopped or Failed"),
+      job?.title || t("点击切回 Super Workbench 查看结果", "Click to view results in Super Workbench")
+    );
+  } else if (!document.hidden) {
+    document.title = "Super Workbench";
+  }
+  _wasJobRunning = running;
+}
+
+window.addEventListener("focus", () => {
+  const job = latestSnap?.live_job;
+  if (!job?.running && !job?.pending_approval) {
+    document.title = "Super Workbench";
+  }
+});
+
+// Global Desktop Keyboard Shortcuts (Ctrl+B, Ctrl+J, Ctrl+`, Ctrl+,, Alt+N, Esc)
+window.addEventListener("keydown", e => {
+  if (e.key === "Escape") {
+    closeStudioModal();
+    closeWsModal();
+    closeDelModal();
+    closeGuideModal();
+    toggleModelPopover(false);
+    togglePlusMenu(false);
+    toggleSlashMenu(false);
+    return;
+  }
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && (e.key === "b" || e.key === "B")) {
+    e.preventDefault();
+    toggleSidebar();
+    return;
+  }
+  if (mod && (e.key === "j" || e.key === "J" || e.key === "`")) {
+    e.preventDefault();
+    toggleInspector();
+    return;
+  }
+  if (mod && e.key === ",") {
+    e.preventDefault();
+    const sm = document.getElementById("studioModal");
+    if (sm?.classList.contains("show")) closeStudioModal();
+    else openSettings("general");
+    return;
+  }
+  if ((e.altKey && (e.key === "n" || e.key === "N")) || (mod && e.shiftKey && (e.key === "n" || e.key === "N"))) {
+    e.preventDefault();
+    createNewThread();
+  }
+});
+
+async function pickNativeFolder(target) {
+  const isWs = target === "ws";
+  const btn = document.getElementById(isWs ? "btnPickWsFolder" : "btnPickSkillFolder");
+  const input = document.getElementById(isWs ? "newWsPath" : "importSkillPath");
+  if (!input) return;
+  if (btn) btn.disabled = true;
+  try {
+    const resp = await fetch("/api/pick_folder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: isWs ? t("选择工作空间目录", "Select Workspace Directory") : t("选择本地 Skill 文件夹", "Select Local Skill Folder"),
+        initial_dir: input.value.trim() || ""
+      })
+    });
+    const res = await resp.json();
+    if (res.ok && res.path) {
+      input.value = res.path;
+      if (isWs) {
+        const nameEl = document.getElementById("newWsName");
+        if (nameEl && !nameEl.value.trim()) {
+          const parts = res.path.replace(/[\\/]+$/, "").split(/[\\/]/);
+          nameEl.value = parts[parts.length - 1] || "";
+        }
+      }
+    }
+  } catch (e) {
+    showToast(e.message);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 // --- Ultra-Smooth 180ms In-Place Streaming Patch (Zero DOM Thrashing) ---
 let lastLiveReplyRendered = "";
 function patchLiveStream(job) {
   if (!latestSnap) return;
   latestSnap.live_job = job;
+  updateDesktopTitleAndNotify(job);
 
   const pill = document.getElementById("statusPill");
   if (pill && job.running) {

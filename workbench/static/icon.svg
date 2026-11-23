@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <defs>
+    <linearGradient id="bgC" x1="16" y1="16" x2="240" y2="240" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#181920"/>
+      <stop offset="100%" stop-color="#0A0B0E"/>
+    </linearGradient>
+    <linearGradient id="rimC" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.06"/>
+    </linearGradient>
+    <linearGradient id="chevC" x1="54" y1="82" x2="124" y2="174" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#A5AEC2"/>
+    </linearGradient>
+    <linearGradient id="wingC" x1="116" y1="172" x2="202" y2="74" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#3B82F6"/>
+      <stop offset="52%" stop-color="#F4F4F6"/>
+      <stop offset="100%" stop-color="#10B981"/>
+    </linearGradient>
+  </defs>
+  <rect x="12" y="12" width="232" height="232" rx="54" fill="url(#bgC)"/>
+  <rect x="12.75" y="12.75" width="230.5" height="230.5" rx="53.25" stroke="url(#rimC)" stroke-width="1.5"/>
+  <rect x="34" y="34" width="188" height="188" rx="38" fill="#FFFFFF" fill-opacity="0.02" stroke="#FFFFFF" stroke-opacity="0.06" stroke-width="1"/>
+  <path d="M 64 92 L 106 128 L 64 164" stroke="url(#chevC)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 122 164 L 190 78 L 166 164 Z" fill="url(#wingC)"/>
+  <line x1="122" y1="164" x2="190" y2="78" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="152" cy="186" r="3.8" fill="#3B82F6"/>
+  <circle cx="168" cy="186" r="3.8" fill="#F4F4F6"/>
+  <circle cx="184" cy="186" r="3.8" fill="#10B981"/>
+</svg>
