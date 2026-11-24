@@ -60,6 +60,17 @@ MCP_TEMPLATES = [
         "env_hints": [],
     },
     {
+        "id": "blender",
+        "name": "blender",
+        "title": "Blender 3D 建模桥接",
+        "desc": "连接已启用 MCP 插件的本机 Blender，查看场景、建模与调整资产。运行需要 uvx。",
+        "transport": "stdio",
+        "command": "uvx",
+        "args": ["blender-mcp"],
+        "url": "",
+        "env_hints": [],
+    },
+    {
         "id": "filesystem",
         "name": "extra-fs",
         "title": "本地参考目录扩展",

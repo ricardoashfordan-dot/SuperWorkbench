@@ -4,9 +4,9 @@
 
 | 状态 | 执行者 | 任务与分支 |
 | --- | --- | --- |
-| 待合并与下一阶段规划 | 项目作者 / AGY / Codex | `feat/skill-ecosystem` 已完成后端、内置技能库、安全审查与前端 UI，推 PR #6 待合并；下一阶段准备开展「按工作空间独立阵容 + 场景智能排班」。 |
+| 待合并 | 项目作者 / AGY | `feat/workspace-rosters` 已完成后端审查、空间独立阵容浮层、模型简写头像与无假默认值清理，推 PR #7 待合并。 |
 
-首轮只读审查针对公开版 `v1.0.1`（`2a1bdf0`），PR #1–#5 已全部合入 `main`（`3b90eb1`）。
+首轮只读审查针对公开版 `v1.0.1`（`2a1bdf0`）。PR #1–#6 已合入 `main`，本轮基线是 PR #6 的合并提交 `17419b2`。
 
 ## 协作记录
 
@@ -20,6 +20,24 @@
 | 2026-11-23 | Codex | 从 `main` 创建 `fix/reviewer-and-godot-gates` 并迁移本轮文件。补齐 smoke 延迟回退，两处指标展示保留最多两位小数，策划和执行中止统一记录 `130`。 | 新分支 13 项 Python 测试、Node 语法检查、门禁面板检查和 `git diff --check` 均通过。只读核验第 134 轮已有数据，`233.54 FPS`、`26.04 ms`、BO3 通过，总门禁通过。 |
 | 2026-11-24 | Codex | 在 `feat/skill-ecosystem` 实现分类与标签、Gemini/DSH 技能发现、安全本地导入、远程预览和导入、导出，扩充至 8 个内置技能。 | 标准库检查、28 项单测和 `git diff --check` 通过。新增远程用例均使用模拟 HTTP，本地路径用例覆盖符号链接或 Windows 目录联接。 |
 | 2026-11-24 | AGY | 安全审查 `workbench/skills.py` 与 `workbench/server.py`（SSRF、重定向白名单、路径穿越、符号链接、128 KB 流式限额均通过）；在 `workbench/static/{index.html,app.css,app.js}` 接入分类筛选、标签搜索、GitHub 链接先预览审查再导入、一键导出及双语适配。 | `scripts/check_stdlib_only.py`、28 项单测、`node --check workbench/static/app.js` 与 `git diff --check` 全部通过。 |
+| 2026-11-24 | Codex | 在 `feat/workspace-rosters` 实现空间独立阵容、五套场景排班、引擎画像、模型简写和便携预设。新增 3D 美术技能与 Blender MCP 模板。 | 标准库检查、33 项单测和 `git diff --check` 均通过。单测覆盖跨空间审批恢复、无引擎与自定义引擎、预设校验和技能状态隔离。Blender 验证覆盖技能和模板加载。 |
+| 2026-11-24 | AGY | 审查 `feat/workspace-rosters` 后端并完成前端接入：主画布「本空间阵容」1 键场景浮层、按需自选推荐技能条、预设 JSON 导出/导入、全局/空间保存切换，全界面清除未安装 `AGY`/`CDX`/`DSH` 假占位并改用真实模型简写头像。 | `scripts/check_stdlib_only.py`、`node --check workbench/static/app.js`、33 项单测与 `git diff --check` 全部通过。 |
+
+## 工作空间阵容交接
+
+- `snapshot.roles` 是当前工作空间的有效阵容。每个槽位新增 `badge`。空引擎的 `engine`、`model`、`badge` 均为空字符串。`snapshot.engines` 增加 `strength_zh`、`strength_en` 和 `capabilities`。
+- `snapshot.scenes` 每项包含 `id`、`label_zh`、`label_en`、`role_labels` 和 `recommended_skills`。用 `active_scene` 显示当前场景，用 `roles_scope` 区分独立阵容与全局继承。
+- `roles.json` 顶层的三个槽位继续存放全局配置。工作空间覆盖在 `workspaces[workspace_id]`，恢复继承时删除该条目。单发、流水线和审批恢复都使用任务所属空间的 ID。
+
+| `POST /api/roles` 操作 | 请求字段 | 成功响应 |
+| --- | --- | --- |
+| 保存（缺省 `action`，也可传 `save`） | 直接传三个槽位对象，或放在 `roles` 下。可传 `scope: "global"`，默认 `workspace`。 | `ok`、`roles`、`snapshot`。 |
+| `apply_scene` | `scene` | `ok`、`scene`、`roles`、`reason_zh`、`reason_en`、`recommended_skills`、`snapshot`。 |
+| `reset_workspace` | 无额外字段 | `ok`、`roles`、`snapshot`。 |
+| `export_preset` | 无额外字段 | `ok` 与 `preset`。预设为 `{version: 1, scene, roles, recommended_skills}`。 |
+| `import_preset` | `preset` 对象 | `ok`、`roles`、`active_scene`、`roles_scope`、`recommended_skills`、`snapshot`。字段非法时返回 400。 |
+
+应用场景和导入预设都写入当前空间。`recommended_skills` 取自场景定义，可在界面提示用户自行勾选。导入的引擎不可用时回退到本机可用选项，同时换用对应模型。Blender 模板提供 `uvx blender-mcp`，实际联机需要启用 Blender 端插件。[MCP 项目安装说明](https://github.com/ahujasid/mcp-for-blender#quickstart)
 
 ## Skill 生态第一阶段交接
 

@@ -155,7 +155,8 @@ function fmtSkillDesc(skill) {
     "bug-triage": "Systematic bug triage workflow: minimal reproduction, root-cause isolation, targeted fix, and regression test verification.",
     "doc-writer": "Write concise, accurate READMEs, architecture notes, and release documentation grounded in real code.",
     "deep-research": "Compare options across sources with clear evidence, trade-offs, and actionable recommendations.",
-    "paper-study": "Break down papers or textbook chapters into core concepts, derivations, common pitfalls, and self-check questions."
+    "paper-study": "Break down papers or textbook chapters into core concepts, derivations, common pitfalls, and self-check questions.",
+    "art-3d-pipeline": "Concept art / three-view specs, Blender bpy procedural modeling with headless multi-angle checks, and PBR asset QA."
   };
   return enMap[skill.slug] || skill.description || "";
 }
@@ -167,6 +168,7 @@ function fmtMcpTemplate(tpl) {
     github: ["GitHub Collaboration", "Query issues, open PRs, search repositories, and publish releases"],
     figma: ["Figma Design Reader", "Read Figma layers, colors, and layout specs directly into production code"],
     comfyui: ["ComfyUI / AIGC Bridge", "Push storyboard prompts directly to local ComfyUI image/video queues"],
+    blender: ["Blender 3D Modeling Bridge", "Connect to local Blender with MCP addon to inspect scenes, model, and adjust 3D assets (requires uvx)"],
     filesystem: ["Extra Local Directory", "Grant AI read/write access to reference folders outside the current workspace"]
   };
   const pair = enMap[tpl.id];
@@ -267,7 +269,9 @@ const STATIC_I18N = [
   // Pane 2: Roles
   ["#pane-roles details.explain-fold > summary > span:first-child", "ⓘ 如何分配这三个角色？点此查看说明", "ⓘ How to assign the three role slots? Click to expand"],
   ["#pane-roles button[onclick*='autoRecommendRoles']", "一键推荐配置", "Auto-Recommend"],
-  ["#pane-roles button[onclick*='saveRoleBindings']", "保存角色配置", "Save Role Bindings"],
+  ["#btnResetWsRoles", "恢复继承全局", "Reset to Global"],
+  ["#btnSaveRolesGlobal", "保存为全局默认", "Save as Global Default"],
+  ["#btnSaveRolesWorkspace", "保存到当前空间", "Save to Workspace"],
   // Pane 3: Engines & API
   ["#pane-engines > .insp-card:first-child > .insp-card-title", "本机已检测 CLI 与自定义引擎", "Detected Local CLIs & Custom Engines"],
   ["#pane-engines > .insp-card:last-child .insp-card-title", "接入新的云端 API 或本地模型（点模板自动填表）", "Connect Cloud API or Local Model (1-click templates)"],
@@ -807,6 +811,10 @@ document.addEventListener("click", e => {
   if (sm && sm.classList.contains("show") && !e.target.closest("#slashMenu") && !e.target.closest("#cmdInput") && !e.target.closest("#plusMenu")) {
     toggleSlashMenu(false);
   }
+  const rp = document.getElementById("rosterPopover");
+  if (rp && rp.classList.contains("show") && !e.target.closest("#rosterPopover") && !e.target.closest("#btnRosterPopover")) {
+    toggleRosterPopover(false);
+  }
 });
 
 function triggerFileUpload(kind) {
@@ -882,34 +890,206 @@ function renderAttachedSkills() {
   bar.innerHTML = attHtml + skillHtml;
 }
 
+let lastRosterReason = "";
+
+function toggleRosterPopover(force) {
+  const pop = document.getElementById("rosterPopover");
+  if (!pop) return;
+  const show = force !== undefined ? force : !pop.classList.contains("show");
+  pop.classList.toggle("show", show);
+  if (show) {
+    togglePlusMenu(false);
+    toggleSlashMenu(false);
+    renderRosterPopover();
+  }
+}
+
+function renderRosterPopover() {
+  const pop = document.getElementById("rosterPopover");
+  if (!pop || !latestSnap) return;
+  const wsName = latestSnap.active_workspace?.name || t("当前空间", "Workspace");
+  const scenes = latestSnap.scenes || [];
+  const activeScene = latestSnap.active_scene || "";
+  const scope = latestSnap.roles_scope || "global";
+  const roles = latestSnap.roles || {};
+  const engines = latestSnap.engines || [];
+  const readyEngines = engines.filter(e => e.ready);
+  const recSlugs = latestSnap.recommended_skills || [];
+  const skillsList = latestSnap.skills || [];
+  const skillBySlug = Object.fromEntries(skillsList.map(s => [s.slug, s]));
+
+  const sceneBtns = scenes.map(sc => {
+    const lbl = currentLang === "en" ? sc.label_en : sc.label_zh;
+    return `<button class="roster-scene-btn ${activeScene === sc.id ? 'active' : ''}" data-scene="${escapeHtml(sc.id)}" onclick="applyWorkspaceScene(this.dataset.scene)">${escapeHtml(lbl)}</button>`;
+  }).join("");
+
+  const slotDefs = [
+    { id: "planner", node: "agy", fallback: t("策划", "Plan") },
+    { id: "builder", node: "codex", fallback: t("执行", "Build") },
+    { id: "reviewer", node: "dsh", fallback: t("质检", "Review") }
+  ];
+
+  const rowsHtml = slotDefs.map(sd => {
+    const r = roles[sd.id] || {};
+    const label = (r.custom_label || "").trim() || sd.fallback;
+    const badge = r.badge || t("未配", "—");
+    const opts = [
+      `<option value="" ${!r.engine ? 'selected' : ''}>${t("未配置引擎", "Unconfigured")}</option>`,
+      ...readyEngines.map(e => {
+        const str = currentLang === "en" ? (e.strength_en || "") : (e.strength_zh || "");
+        const hint = str ? ` · ${str}` : "";
+        return `<option value="${escapeHtml(e.id)}" ${e.id === r.engine ? 'selected' : ''}>${escapeHtml(e.name)}${escapeHtml(hint)}</option>`;
+      })
+    ].join("");
+    return `
+      <div class="roster-row">
+        <div class="roster-row-lbl">
+          <span class="agent-badge">${escapeHtml(badge)}</span>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(label)}</span>
+        </div>
+        <select onchange="quickChangeRosterEngine('${sd.id}', this.value)">${opts}</select>
+      </div>`;
+  }).join("");
+
+  const recHtml = recSlugs.length ? (() => {
+    const chips = recSlugs.map(slug => {
+      const sk = skillBySlug[slug];
+      if (!sk) return `<span class="skill-src">/${escapeHtml(slug)}</span>`;
+      const on = Boolean(sk.active);
+      return `<button class="toggle-chip ${on ? 'on' : ''}" data-sid="${escapeHtml(sk.id)}" onclick="toggleSkill(this.dataset.sid,'workspace',${!on})">${on ? '✓ ' : '+ '}${escapeHtml(sk.slug)}</button>`;
+    }).join("");
+    return `<div class="roster-rec-bar"><span>${t("推荐搭配技能（按需自选）：", "Recommended skills (opt-in):")}</span>${chips}</div>`;
+  })() : "";
+
+  pop.innerHTML = `
+    <div class="roster-head">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        <strong style="font-size:13px;">${escapeHtml(wsName)} · ${t("本空间阵容", "Workspace Roster")}</strong>
+        <span class="skill-src">${scope === "workspace" ? t("本空间独立", "Workspace Override") : t("继承全局", "Global Default")}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        ${scope === "workspace" ? `<button class="btn sm" onclick="resetWorkspaceRoster()">${t("恢复全局", "Reset")}</button>` : ""}
+        <button class="icon-btn" style="width:24px;height:24px;" onclick="toggleRosterPopover(false)">&times;</button>
+      </div>
+    </div>
+    <div>
+      <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:6px;">${t("按任务场景 1 键智能排班（仅作用于当前空间，不影响其他空间）", "1-click scene roster (applies only to this workspace)")}</div>
+      <div class="roster-scenes">${sceneBtns}</div>
+    </div>
+    ${lastRosterReason ? `<div class="roster-reason">${escapeHtml(lastRosterReason)}</div>` : ""}
+    <div class="roster-rows">${rowsHtml}</div>
+    ${recHtml}
+    <div class="roster-foot">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="btn sm" onclick="exportWorkspaceRosterPreset()">${t("导出预设", "Export Preset")}</button>
+        <button class="btn sm" onclick="triggerImportRosterPreset()">${t("导入预设", "Import Preset")}</button>
+      </div>
+      <button class="btn sm" onclick="toggleRosterPopover(false); openStudioModal('roles');">${t("高级人设与模型…", "Advanced Roles…")}</button>
+    </div>`;
+}
+
+async function applyWorkspaceScene(sceneId) {
+  try {
+    const res = await api("/api/roles", { action: "apply_scene", scene: sceneId });
+    lastRosterReason = currentLang === "en" ? (res.reason_en || "") : (res.reason_zh || "");
+    lastChatSig = "";
+    render(res.snapshot, true);
+    renderRosterPopover();
+    showToast(t("已为当前空间切换场景阵容（推荐技能可在下方按需勾选）", "Workspace scene applied (pick recommended skills below)"));
+  } catch (e) { showToast(e.message); }
+}
+
+async function quickChangeRosterEngine(slotId, newEngId) {
+  const engines = latestSnap?.engines || [];
+  const eng = engines.find(e => e.id === newEngId);
+  const payload = { [slotId]: { engine: newEngId, model: eng?.default_model || "" } };
+  try {
+    lastChatSig = "";
+    const res = await api("/api/roles", { action: "save", scope: "workspace", roles: payload });
+    lastRosterReason = "";
+    render(res.snapshot, true);
+    renderRosterPopover();
+    showToast(t("已更新当前空间角色引擎", "Workspace role updated"));
+  } catch (e) { showToast(e.message); }
+}
+
+async function resetWorkspaceRoster() {
+  try {
+    lastChatSig = "";
+    lastRosterReason = "";
+    const res = await api("/api/roles", { action: "reset_workspace" });
+    render(res.snapshot, true);
+    renderRosterPopover();
+    renderStudioModal();
+    showToast(t("已恢复继承全局默认阵容", "Workspace reset to global default roster"));
+  } catch (e) { showToast(e.message); }
+}
+
+async function exportWorkspaceRosterPreset() {
+  try {
+    const res = await api("/api/roles", { action: "export_preset" });
+    const jsonText = JSON.stringify(res.preset || {}, null, 2);
+    const wsSlug = (latestSnap?.active_workspace?.id || "workspace").replace(/[^a-z0-9_-]+/gi, "-");
+    const dlName = `${wsSlug}-roster-preset.json`;
+    const blob = new Blob([jsonText], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = dlName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast(t(`已导出阵容预设：${dlName}`, `Exported preset: ${dlName}`));
+  } catch (e) { showToast(e.message); }
+}
+
+function triggerImportRosterPreset() {
+  const inp = document.getElementById("rosterPresetFileInput");
+  if (inp) { inp.value = ""; inp.click(); }
+}
+
+async function handleImportRosterFile(inputEl) {
+  const file = inputEl?.files?.[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const preset = JSON.parse(text);
+    const res = await api("/api/roles", { action: "import_preset", preset });
+    lastRosterReason = "";
+    lastChatSig = "";
+    render(res.snapshot, true);
+    renderRosterPopover();
+    renderStudioModal();
+    showToast(t("已导入阵容预设到当前空间（技能需按需手动勾选）", "Roster preset imported to current workspace"));
+  } catch (e) { showToast(e.message || t("导入预设失败：无效的 JSON 文件", "Invalid roster preset JSON")); }
+}
+
 async function autoRecommendRoles(saveNow = false) {
   if (!latestSnap) return;
+  if (saveNow) {
+    await applyWorkspaceScene(latestSnap.active_scene || "coding");
+    return;
+  }
   const engines = latestSnap.engines || [];
   const readyList = engines.filter(e => e.ready);
   const readyIds = new Set(readyList.map(e => e.id));
-  const fallback = readyList[0]?.id || "agy";
+  const fallback = readyList[0]?.id || "";
   const pick = (list) => list.find(id => readyIds.has(id)) || fallback;
   const engMap = Object.fromEntries(engines.map(e => [e.id, e]));
-  const p = pick(["agy", "claude", "gemini", "codex"]);
-  const b = pick(["codex", "claude", "agy", "gemini"]);
+  const p = pick(["agy", "claude", "gemini", "codex", "dsh"]);
+  const b = pick(["codex", "claude", "agy", "gemini", "dsh"]);
   const r = pick(["dsh", "agy", "codex", "claude", "gemini"]);
   const nextRoles = {
     planner: { ...(latestSnap.roles?.planner || {}), engine: p, model: engMap[p]?.default_model || "" },
     builder: { ...(latestSnap.roles?.builder || {}), engine: b, model: engMap[b]?.default_model || "", effort: "high" },
     reviewer: { ...(latestSnap.roles?.reviewer || {}), engine: r, model: engMap[r]?.default_model || "" }
   };
-  if (saveNow) {
-    try {
-      lastChatSig = "";
-      const res = await api("/api/roles", { roles: nextRoles });
-      render(res.snapshot, true);
-      showToast("已按本机环境一键绑定最佳角色阵容");
-    } catch (e) { showToast(e.message); }
-    return;
-  }
   latestSnap.roles = nextRoles;
   renderStudioModal();
-  showToast("已按本机环境自动匹配推荐阵容，点击「保存角色配置」生效");
+  showToast(readyList.length
+    ? t("已按本机可用引擎自动推荐阵容，点击保存生效", "Recommended available engines — click Save to apply")
+    : t("当前未检测到可用引擎，请先安装 CLI 或添加 API / Ollama", "No available engines detected — install a CLI or add an API/Ollama first"));
 }
 
 function renderStudioModal() {
@@ -927,23 +1107,39 @@ function renderStudioModal() {
   const readyOpts = engines.filter(e => e.ready);
   const notReadyOpts = engines.filter(e => !e.ready);
 
+  const scopeBadge = document.getElementById("rolesScopeBadge");
+  const resetBtn = document.getElementById("btnResetWsRoles");
+  const isWsScope = latestSnap.roles_scope === "workspace";
+  if (scopeBadge) {
+    scopeBadge.textContent = isWsScope
+      ? t("当前状态：本空间独立阵容（不影响其他空间）", "Scope: Workspace Override (isolated from other workspaces)")
+      : t("当前状态：继承全局默认阵容", "Scope: Inheriting Global Default Roster");
+  }
+  if (resetBtn) resetBtn.style.display = isWsScope ? "inline-flex" : "none";
+
   document.getElementById("roleSlotsContainer").innerHTML = slotMeta.map(s => {
     const r = roles[s.id] || {};
-    const curEng = engMap[r.engine] || engines[0] || {};
-    const curModel = r.model || curEng.default_model || "";
+    const curEng = (r.engine && engMap[r.engine]) ? engMap[r.engine] : {};
+    const curModel = r.engine ? (r.model || curEng.default_model || "") : "";
     const optHtml = [
-      readyOpts.length ? `<optgroup label="${t("本机可用引擎", "Available Engines")}">${readyOpts.map(e => `<option value="${escapeHtml(e.id)}" ${e.id === r.engine ? 'selected' : ''}>${escapeHtml(e.name)} ${e.kind === 'openai-compat' ? '· API' : '· CLI'}</option>`).join("")}</optgroup>` : "",
-      notReadyOpts.length ? `<optgroup label="${t("尚未安装", "Not Installed")}">${notReadyOpts.map(e => `<option value="${escapeHtml(e.id)}" ${e.id === r.engine ? 'selected' : ''}>${escapeHtml(e.name)} (${t("未检测到", "Not detected")})</option>`).join("")}</optgroup>` : ""
+      `<option value="" ${!r.engine ? 'selected' : ''}>${t("未配置引擎（待选择）", "Unconfigured")}</option>`,
+      readyOpts.length ? `<optgroup label="${t("本机可用引擎", "Available Engines")}">${readyOpts.map(e => {
+        const str = currentLang === "en" ? (e.strength_en || "") : (e.strength_zh || "");
+        return `<option value="${escapeHtml(e.id)}" ${e.id === r.engine ? 'selected' : ''}>${escapeHtml(e.name)}${str ? ' · ' + escapeHtml(str) : ''}</option>`;
+      }).join("")}</optgroup>` : "",
+      notReadyOpts.length ? `<optgroup label="${t("尚未安装（需先安装 CLI）", "Not Installed")}">${notReadyOpts.map(e => `<option value="${escapeHtml(e.id)}" ${e.id === r.engine ? 'selected' : ''}>${escapeHtml(e.name)} (${t("未检测到", "Not detected")})</option>`).join("")}</optgroup>` : ""
     ].join("");
 
     const models = curEng.models || [];
     const hasCurInList = models.some(m => m.id === curModel);
-    const modelControl = (curEng.kind === "openai-compat" || models.length <= 1)
-      ? `<input id="slot-model-${s.id}" value="${escapeHtml(curModel)}" placeholder="${t("输入模型名称", "Enter model name")}" />`
-      : `<select id="slot-model-${s.id}">
-          ${!hasCurInList && curModel ? `<option value="${escapeHtml(curModel)}" selected>${escapeHtml(curModel)}</option>` : ""}
-          ${models.map(m => `<option value="${escapeHtml(m.id)}" ${m.id === curModel ? 'selected' : ''}>${escapeHtml(m.label || m.id)}</option>`).join("")}
-        </select>`;
+    const modelControl = !r.engine
+      ? `<input id="slot-model-${s.id}" value="" disabled placeholder="${t("请先选择引擎", "Select an engine first")}" />`
+      : (curEng.kind === "openai-compat" || models.length <= 1)
+        ? `<input id="slot-model-${s.id}" value="${escapeHtml(curModel)}" placeholder="${t("输入模型名称", "Enter model name")}" />`
+        : `<select id="slot-model-${s.id}">
+            ${!hasCurInList && curModel ? `<option value="${escapeHtml(curModel)}" selected>${escapeHtml(curModel)}</option>` : ""}
+            ${models.map(m => `<option value="${escapeHtml(m.id)}" ${m.id === curModel ? 'selected' : ''}>${escapeHtml(m.label || m.id)}</option>`).join("")}
+          </select>`;
 
     const warnApi = (s.id === "builder" && curEng.kind === "openai-compat")
       ? `<div style="font-size:11px;color:var(--c-warn);margin-top:4px;">${t("提示：纯 API 无法直接修改硬盘里的代码文件；如需自动写代码，建议为「核心执行」选一个本地 CLI。", "Note: Pure HTTP APIs cannot edit local files directly; bind a local CLI to Core Builder for file editing.")}</div>`
@@ -1047,7 +1243,7 @@ function resetRolePersona(slotId) {
   showToast(t("已清空自定义人设，点击「保存角色配置」生效", "Reset to default persona — click Save Role Bindings to apply"));
 }
 
-async function saveRoleBindings() {
+async function saveRoleBindings(scope = "workspace") {
   const payload = {};
   ["planner", "builder", "reviewer"].forEach(slotId => {
     const engEl = document.getElementById("slot-eng-" + slotId);
@@ -1064,10 +1260,13 @@ async function saveRoleBindings() {
     };
   });
   try {
-    const res = await api("/api/roles", { roles: payload });
+    lastChatSig = "";
+    const res = await api("/api/roles", { action: "save", scope, roles: payload });
     render(res.snapshot, true);
     closeStudioModal();
-    showToast(t("角色与引擎配置已生效", "Role & engine bindings saved"));
+    showToast(scope === "global"
+      ? t("已保存为全局默认阵容", "Saved as global default roster")
+      : t("已保存到当前工作空间阵容", "Saved to current workspace roster"));
   } catch (e) { showToast(e.message); }
 }
 
@@ -1366,7 +1565,7 @@ cmdInput.addEventListener("input", () => {
   else toggleSlashMenu(false);
 });
 cmdInput.addEventListener("keydown", e => {
-  if (e.key === "Escape") { toggleSlashMenu(false); togglePlusMenu(false); }
+  if (e.key === "Escape") { toggleSlashMenu(false); togglePlusMenu(false); toggleRosterPopover(false); }
   if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
     e.preventDefault();
     handlePrimarySend();
@@ -1690,7 +1889,7 @@ function renderChat(msgs, job) {
     if (sender === "agy" && !job.running) {
       actions = `
         <div class="handoff-bar">
-          <button class="btn sm solid" onclick="approveAgyPlan(${idx})">${t("采纳方案并交棒 Codex", "Approve Plan & Hand Off")}</button>
+          <button class="btn sm solid" onclick="approveAgyPlan(${idx})">${t("采纳方案并交棒执行", "Approve Plan & Hand Off")}</button>
           <button class="btn sm" onclick="prefillInput('${t("针对上面的方案，我想微调：", "Regarding the plan above, please adjust: ")}')">${t("继续微调", "Refine")}</button>
         </div>`;
     } else if (sender === "codex" && !job.running) {
@@ -1708,11 +1907,13 @@ function renderChat(msgs, job) {
           </div>`;
     }
     const reviewResult = sender === "dsh" && ["ERROR", "PIPELINE_DONE", "DSH_VERIFY"].includes(m.type);
+    const badgeHtml = info.badge ? `<span class="agent-badge">${escapeHtml(info.badge)}</span>` : "";
     return `
       <div class="msg-agent">
         <div class="agent-head">
           <div class="agent-id">
             <i class="agent-dot ${sender}"></i>
+            ${badgeHtml}
             <span>${escapeHtml(info.name)}</span>
             <span class="agent-role">${escapeHtml(info.role)}</span>
           </div>
@@ -1872,65 +2073,85 @@ function render(snap, fromMutation = false) {
   const isAigc = activeWs.type === "aigc-studio";
 
   const slotToNode = { planner: "agy", builder: "codex", reviewer: "dsh" };
-  const summaryParts = [];
   ["planner", "builder", "reviewer"].forEach(slotId => {
     const r = roles[slotId] || {};
-    const eng = engMap[r.engine] || { short: (r.engine || "?").slice(0, 3).toUpperCase(), name: r.engine || "未绑定", ready: false };
+    const hasEngine = Boolean(r.engine);
+    const eng = (hasEngine && engMap[r.engine]) ? engMap[r.engine] : { short: "", name: t("未配置", "Unconfigured"), ready: false };
     const dot = document.getElementById("dot-" + slotId);
-    if (dot) dot.className = "s-dot " + (eng.ready ? "on" : "off");
+    if (dot) dot.className = "s-dot " + (hasEngine && eng.ready ? "on" : "off");
 
     const nodeId = slotToNode[slotId];
     const defaultShort = isAigc
       ? (slotId === "planner" ? t("编剧", "Script") : slotId === "builder" ? t("制片", "Produce") : t("审片", "Review"))
       : (slotId === "planner" ? t("策划", "Plan") : slotId === "builder" ? t("执行", "Build") : t("质检", "Review"));
     const roleShort = (r.custom_label || "").trim() || defaultShort;
+    const badge = hasEngine ? (r.badge || eng.short || "AI") : "";
 
     const pLbl = document.getElementById("pill-label-" + nodeId);
-    if (pLbl) pLbl.textContent = `${roleShort} · ${eng.short}`;
+    if (pLbl) pLbl.textContent = badge ? `${roleShort} · ${badge}` : `${roleShort} · ${t("未配", "Unset")}`;
 
     const rTxt = document.getElementById("rtxt-" + nodeId);
-    if (rTxt) rTxt.textContent = eng.short;
+    if (rTxt) rTxt.textContent = badge || t("未配", "—");
     const rTitle = document.getElementById("rtitle-" + nodeId);
-    if (rTitle) rTitle.textContent = `${roleShort} · ${eng.name}${r.model ? ' (' + r.model + ')' : ''}`;
+    if (rTitle) {
+      rTitle.textContent = hasEngine
+        ? `${roleShort} · ${eng.name}${r.model ? ' (' + r.model + ')' : ''}`
+        : `${roleShort} · ${t("尚未配置引擎", "No engine configured")}`;
+    }
 
     const roleDisplay = (r.custom_label || "").trim() || (isAigc ? (r.aigc_label || roleShort) : (r.label || roleShort));
     ROLE_INFO[nodeId] = {
-      name: eng.name,
-      role: `${roleDisplay}${r.model ? ' · ' + r.model : ''}`
+      name: hasEngine ? eng.name : roleDisplay,
+      role: hasEngine ? `${roleDisplay}${r.model ? ' · ' + r.model : ''}` : t("尚未配置引擎", "Unconfigured"),
+      badge
     };
-    summaryParts.push(`${eng.short}`);
   });
+
+  // Update Workspace Roster trigger pill & refresh open popover
+  const activeSceneObj = (snap.scenes || []).find(sc => sc.id === snap.active_scene);
+  const rosterTrig = document.getElementById("rosterTriggerText");
+  if (rosterTrig) {
+    rosterTrig.textContent = activeSceneObj
+      ? (currentLang === "en" ? activeSceneObj.label_en : activeSceneObj.label_zh)
+      : t("切换阵容", "Roster");
+  }
+  if (document.getElementById("rosterPopover")?.classList.contains("show")) {
+    renderRosterPopover();
+  }
 
   // Populate Quick Model Switcher Popover (1-click fast switching!)
   const pRole = roles.planner || {};
   const bRole = roles.builder || {};
-  const pEng = engMap[pRole.engine] || {};
-  const bEng = engMap[bRole.engine] || {};
+  const pEng = (pRole.engine && engMap[pRole.engine]) ? engMap[pRole.engine] : {};
+  const bEng = (bRole.engine && engMap[bRole.engine]) ? engMap[bRole.engine] : {};
   const qPLbl = document.getElementById("quickPlannerLabel");
   const qBLbl = document.getElementById("quickBuilderLabel");
-  if (qPLbl) qPLbl.textContent = `${t("策划模型", "Planner Model")} (${pEng.name || pRole.engine || 'AGY'})`;
-  if (qBLbl) qBLbl.textContent = `${t("执行模型", "Builder Model")} (${bEng.name || bRole.engine || 'Codex'})`;
+  if (qPLbl) qPLbl.textContent = `${t("策划模型", "Planner Model")} (${pEng.name || t("未配置", "Unconfigured")})`;
+  if (qBLbl) qBLbl.textContent = `${t("执行模型", "Builder Model")} (${bEng.name || t("未配置", "Unconfigured")})`;
 
   const fillQuickSelect = (selId, eng, curVal) => {
     const sel = document.getElementById(selId);
     if (!sel || document.activeElement === sel) return;
     const list = (eng.models && eng.models.length) ? eng.models : (curVal ? [{ id: curVal, label: curVal }] : []);
     const hasCur = list.some(m => m.id === curVal);
-    sel.innerHTML =
-      (!hasCur && curVal ? `<option value="${escapeHtml(curVal)}" selected>${escapeHtml(curVal)}</option>` : "") +
-      list.map(m => `<option value="${escapeHtml(m.id)}" ${m.id === curVal ? 'selected' : ''}>${escapeHtml(m.label || m.id)}</option>`).join("");
+    sel.innerHTML = !list.length
+      ? `<option value="">${t("未配置", "Unconfigured")}</option>`
+      : ((!hasCur && curVal ? `<option value="${escapeHtml(curVal)}" selected>${escapeHtml(curVal)}</option>` : "") +
+        list.map(m => `<option value="${escapeHtml(m.id)}" ${m.id === curVal ? 'selected' : ''}>${escapeHtml(m.label || m.id)}</option>`).join(""));
   };
-  fillQuickSelect("quickPlannerModel", pEng, pRole.model || pEng.default_model || "");
-  fillQuickSelect("quickBuilderModel", bEng, bRole.model || bEng.default_model || "");
+  fillQuickSelect("quickPlannerModel", pEng, pRole.engine ? (pRole.model || pEng.default_model || "") : "");
+  fillQuickSelect("quickBuilderModel", bEng, bRole.engine ? (bRole.model || bEng.default_model || "") : "");
 
   const qEffField = document.getElementById("quickEffortField");
   const qEffSel = document.getElementById("quickBuilderEffort");
   if (qEffField) qEffField.style.display = bEng.supports_effort ? "block" : "none";
   if (qEffSel && document.activeElement !== qEffSel) qEffSel.value = bRole.effort || "high";
 
-  const shortP = (pRole.model || pEng.short || "").replace(/^gemini-/, "G").replace(/^claude-/, "C-");
-  const shortB = bRole.model || bEng.short || "";
-  document.getElementById("engineSummary").textContent = `${shortP} · ${shortB}`;
+  const shortP = pRole.engine ? (pRole.model || pRole.badge || pEng.short || "").replace(/^gemini-/, "G").replace(/^claude-/, "C-") : "";
+  const shortB = bRole.engine ? (bRole.model || bRole.badge || bEng.short || "") : "";
+  document.getElementById("engineSummary").textContent = (shortP || shortB)
+    ? `${shortP || t("未配", "Unset")} · ${shortB || t("未配", "Unset")}`
+    : t("点击配置引擎与模型", "Configure Engines & Models");
 
   // Update Skills count for composer menu
   const skillsList = snap.skills || [];
@@ -2630,6 +2851,7 @@ window.addEventListener("keydown", e => {
     toggleModelPopover(false);
     togglePlusMenu(false);
     toggleSlashMenu(false);
+    toggleRosterPopover(false);
     return;
   }
   const mod = e.ctrlKey || e.metaKey;
