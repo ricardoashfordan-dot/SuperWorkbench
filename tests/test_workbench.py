@@ -647,6 +647,11 @@ print(json.dumps([[len(rows), rows[0]["body"], rows[1]["body"]] for rows in hist
         self.assertEqual({m["body"] for m in saved}, {m["body"] for m in created})
         self.assertEqual([int(m["id"].split("-")[1]) for m in saved], list(range(402, 418)))
 
+    def test_messages_missing_workspace_id_do_not_leak_into_super_workbench(self):
+        config.write_json(config.MESSAGES_PATH, [{"id": "msg-001", "body": "unscoped legacy message"}])
+        rows = threads.load_thread_messages("super-workbench", "default-super-workbench")
+        self.assertEqual(rows, [])
+
 
 class PipelineReviewTests(unittest.TestCase):
     def test_reviewer_reports_success_failure_and_cancellation(self):
