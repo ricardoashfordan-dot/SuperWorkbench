@@ -184,7 +184,7 @@ class SkillEcosystemTests(unittest.TestCase):
 
         with (
             patch.object(HTTPSHandler, "https_open", side_effect=blocked_http),
-            patch.object(skills, "REMOTE_TIMEOUT_SECONDS", 0.1),
+            patch.object(skills, "REMOTE_TIMEOUT_SECONDS", 0.25),
         ):
             try:
                 with self.assertRaisesRegex(ValueError, "超时"):
@@ -192,7 +192,7 @@ class SkillEcosystemTests(unittest.TestCase):
                 self.assertFalse(completed.is_set())
             finally:
                 allow_response.set()
-        self.assertTrue(completed.wait(2))
+            self.assertTrue(completed.wait(3))
         self.assertFalse(self.library.exists())
 
     def test_local_import_copies_only_validated_text_and_exports(self):

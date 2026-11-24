@@ -6,7 +6,7 @@ import shutil
 import tempfile
 import threading
 import time
-from concurrent.futures import Future
+from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from http.client import HTTPException
 from pathlib import Path
 from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
@@ -411,7 +411,7 @@ def preview_remote_skill(url: str) -> dict:
         raise
     try:
         content, resolved_url = result.result(timeout=_time_left(deadline))
-    except TimeoutError as exc:
+    except (TimeoutError, FutureTimeoutError) as exc:
         raise ValueError("远程技能下载超时（8 秒）") from exc
     except (OSError, HTTPException) as exc:
         raise ValueError("无法读取远程 SKILL.md") from exc
