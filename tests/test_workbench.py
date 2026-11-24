@@ -82,6 +82,7 @@ class SkillEcosystemTests(unittest.TestCase):
             "aigc-storyboard": "aigc", "code-review-strict": "engineering", "git-commit-release": "engineering",
             "security-audit": "engineering", "bug-triage": "engineering", "doc-writer": "engineering",
             "deep-research": "research", "paper-study": "research",
+            "art-3d-pipeline": "aigc",
         }
         for directory, body in (
             (self.home / ".gemini" / "skills" / "legacy", "# Legacy\nA Markdown body."),
@@ -294,6 +295,176 @@ class SkillEcosystemTests(unittest.TestCase):
             handler.do_POST()
             self.assertEqual(handler._send_json.call_args.args[0]["skill"]["filename"], "SKILL.md")
             snapshot.assert_called_once()
+
+
+class WorkspaceRosterTests(unittest.TestCase):
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.root = Path(scratch.name)
+        patches = ExitStack()
+        self.addCleanup(patches.close)
+        isolated = (
+            "ROLES_PATH", "ENGINES_PATH", "THREADS_PATH", "MESSAGES_PATH", "STATE_PATH", "WORKSPACES_PATH",
+            "SKILLS_STATE_PATH", "NEXT_FOR_CODEX_PATH",
+        )
+        patches.enter_context(patch.multiple(config, **{name: self.root / name.lower() for name in isolated}))
+        self.detect = patches.enter_context(patch.object(adapters, "detect_cli_status", return_value={}))
+        patches.enter_context(patch.object(adapters, "load_model_settings", return_value={}))
+        patches.enter_context(patch.object(server, "_WS_DISK_CACHE", {}))
+        self.active = {"id": "a", "name": "Workspace A", "type": "general", "path": str(self.root)}
+        patches.enter_context(patch.object(config, "get_active_workspace", side_effect=lambda: self.active))
+
+    def _post(self, payload, expected_status=200):
+        handler = server.WorkbenchHandler.__new__(server.WorkbenchHandler)
+        handler.path = "/api/roles"
+        handler._validate_host_and_origin = Mock(return_value=True)
+        handler._authorize = Mock(return_value=True)
+        handler._read_body = Mock(return_value=payload)
+        handler._send_json = Mock()
+        handler.do_POST()
+        reply = handler._send_json.call_args.args
+        self.assertEqual(reply[1] if len(reply) > 1 else 200, expected_status, reply[0])
+        return reply[0]
+
+    def _add_api_engine(self, name, model):
+        return adapters.add_custom_engine({
+            "name": name, "kind": "openai-compat", "base_url": "https://example.invalid/v1",
+            "default_model": model, "api_key": "fixture-token",
+        })["id"]
+
+    def test_empty_environment_reports_unconfigured_slots_even_for_legacy_fake_defaults(self):
+        config.write_json(config.ROLES_PATH, {"planner": {"engine": "agy", "model": "old-default"}})
+        for roles in (
+            adapters.default_role_bindings(),
+            adapters.load_role_bindings("a"),
+            adapters.recommend_workspace_roster("coding", "a")["roles"],
+        ):
+            self.assertEqual(set(roles), set(adapters.ROLE_SLOTS))
+            for role in roles.values():
+                self.assertEqual((role["engine"], role["model"], role["badge"]), ("", "", ""))
+        with patch.object(adapters, "get_engine_by_id") as lookup:
+            rc, reason = runner.JobManager()._run_slot_blocking("planner", "task", "", str(self.root), ws_id="a")
+        self.assertNotEqual(rc, 0)
+        self.assertIn("尚未配置", reason)
+        lookup.assert_not_called()
+
+    def test_custom_only_defaults_models_badges_and_engine_profiles(self):
+        engine_id = self._add_api_engine("DeepSeek", "deepseek-chat")
+        other = self._add_api_engine("Ollama Qwen", "qwen2.5:14b")
+        self.assertTrue(all(role["engine"] == engine_id for role in adapters.default_role_bindings().values()))
+        self.assertTrue(all(role["engine"] in (engine_id, other)
+                            for role in adapters.recommend_workspace_roster("art-3d")["roles"].values()))
+        adapters.save_role_bindings({"reviewer": {"engine": other, "model": "qwen2.5:14b"}}, "a")
+        roles = adapters.load_role_bindings("a")
+        self.assertEqual((roles["planner"]["badge"], roles["reviewer"]["badge"]), ("DS", "QWN"))
+        badges = {
+            "gpt-5.4": "GPT", "gpt-6.2-sol": "GPT", "claude-sonnet-4-5": "CLD", "gemini-2.5-pro": "GEM",
+            "gemini-4-neon-high": "GEM", "deepseek-reasoner": "DSR", "deepseek-chat": "DS",
+            "qwen2.5:14b": "QWN", "kimi-example": "KMI", "o3": "O3", "o4-mini": "O4M",
+            "headless": "DSH", "my-model": "MYMO",
+        }
+        for model, badge in badges.items():
+            with self.subTest(model=model):
+                self.assertEqual(adapters.compute_model_badge(engine_id, model), badge)
+        self.assertEqual(adapters.compute_model_badge("codex"), "CDX")
+        self.assertEqual(adapters.compute_model_badge("", "gpt-5.4"), "")
+        for engine in adapters.list_all_engines():
+            self.assertTrue(engine["strength_zh"] and engine["strength_en"] and engine["capabilities"])
+            self.assertNotIn("api_key", engine)
+        self.detect.return_value = {"dsh": {"ready": True, "path": "dsh"}}
+        self.assertTrue(all(role["engine"] == "dsh" for role in adapters.default_role_bindings().values()))
+
+    def test_scope_and_scene_isolate_workspaces_through_pipeline_approval(self):
+        a = self.active.copy()
+        b = {**a, "id": "b", "name": "Workspace B"}
+        engine = self._add_api_engine("Workspace Engine", "default-model")
+        config.write_json(config.ROLES_PATH, {"planner": {"engine": engine, "custom_label": "Global planner"}})
+        self.assertEqual(adapters.load_role_bindings("b")["planner"]["custom_label"], "Global planner")
+        global_save = self._post({"scope": "global", "planner": {"custom_label": "Shared planner"}})
+        self.assertEqual(global_save["snapshot"]["roles_scope"], "global")
+        self.assertEqual(adapters.load_role_bindings("b")["planner"]["custom_label"], "Shared planner")
+        roles = {
+            slot: {"engine": engine, "model": f"a-{slot}", "system_prompt": f"Workspace A {slot}"}
+            for slot in adapters.ROLE_SLOTS
+        }
+        self._post(roles)
+        config.write_json(config.SKILLS_STATE_PATH, {"global_enabled": ["builtin:doc-writer"], "workspace_enabled": {}})
+        skills_before = config.SKILLS_STATE_PATH.read_bytes()
+        binding_a = adapters.load_role_bindings("a")
+        job = runner.JobManager()
+        tid = threads.ensure_workspace_thread("a")[0]["id"]
+        with (
+            patch.object(adapters, "stream_openai_compat", return_value=(0, "Engine reply")) as api,
+            patch.object(config, "load_app_settings", return_value={"approve_before_build": True}),
+        ):
+            job._worker("reviewer", "Single review", False, a, Mock(), thread_id=tid)
+            job._worker("planner", "Pipeline", True, a, Mock(), thread_id=tid)
+            self.assertEqual(api.call_count, 2)
+            self.active = b
+            self._post({"roles": {"builder": {"custom_label": "B only"}}})
+            self.detect.return_value = {"codex": {"ready": True, "path": "codex"}}
+            response = self._post({"action": "apply_scene", "scene": "art-3d"})
+            self.assertEqual(response["roles"]["builder"]["engine"], "codex")
+            self.assertEqual(response["roles"]["builder"]["custom_label"], "建模与资产")
+            self.assertEqual(response["snapshot"]["active_scene"], "art-3d")
+            self.assertEqual(response["snapshot"]["roles_scope"], "workspace")
+            self.assertEqual(len(response["snapshot"]["scenes"]), 5)
+            self.assertEqual(response["recommended_skills"], ["art-3d-pipeline", "aigc-storyboard"])
+            self.assertEqual(config.SKILLS_STATE_PATH.read_bytes(), skills_before)
+            self.assertEqual(adapters.load_role_bindings("a"), binding_a)
+            with patch.object(runner.threading, "Thread", side_effect=lambda **kw: Mock(start=kw["target"])):
+                ok, _ = job.approve_pending("", Mock())
+            self.assertTrue(ok)
+        self.assertEqual(
+            [(call.kwargs["model"], call.kwargs["system_prompt"]) for call in api.call_args_list],
+            [(f"a-{slot}", f"Workspace A {slot}") for slot in ("reviewer", "planner", "builder", "reviewer")],
+        )
+        self._post({"action": "reset_workspace"})
+        self.assertEqual(adapters.get_workspace_roster("b")["roles_scope"], "global")
+        self.assertEqual(adapters.load_role_bindings("a"), binding_a)
+
+    def test_preset_roundtrip_and_validation(self):
+        engine = self._add_api_engine("Portable Engine", "qwen2.5:14b")
+        applied = self._post({"action": "apply_scene", "scene": "paper-study"})
+        preset = self._post({"action": "export_preset"})["preset"]
+        self.assertEqual(preset["scene"], "paper-study")
+        self.assertEqual(preset["recommended_skills"], ["paper-study", "deep-research"])
+        self.assertNotIn("fixture-token", json.dumps(preset))
+        self.active = {**self.active, "id": "b"}
+        received = self._post({"action": "import_preset", "preset": json.loads(json.dumps(preset))})
+        self.assertEqual(received["roles"], applied["roles"])
+        self.assertEqual(self._post({"action": "export_preset"})["preset"], preset)
+        self.assertFalse(config.SKILLS_STATE_PATH.exists())
+
+        for invalid in (
+            [], {**preset, "version": True}, {**preset, "scene": "unregistered"},
+            {**preset, "recommended_skills": ["../invalid"]},
+            {**preset, "roles": {**preset["roles"], "builder": {"engine": [engine]}}},
+            {**preset, "roles": {**preset["roles"], "builder": {"system_prompt": "x" * 2001}}},
+            {**preset, "roles": {**preset["roles"], "builder": {"command_template": "foreign"}}},
+        ):
+            with self.subTest(preset_type=type(invalid).__name__):
+                before = config.ROLES_PATH.read_bytes()
+                self.assertFalse(self._post({"action": "import_preset", "preset": invalid}, 400)["ok"])
+                self.assertEqual(config.ROLES_PATH.read_bytes(), before)
+        portable = json.loads(json.dumps(preset))
+        portable["roles"]["builder"].update(engine="not-installed", model="foreign-model")
+        result = self._post({"action": "import_preset", "preset": portable})
+        self.assertEqual((result["roles"]["builder"]["engine"], result["roles"]["builder"]["model"]),
+                         (engine, "qwen2.5:14b"))
+        self.assertFalse(config.SKILLS_STATE_PATH.exists())
+
+    def test_art_pipeline_and_blender_template_are_discoverable(self):
+        builtin = [item for item in skills.list_skills("a", self.root) if item["source"] == "builtin"]
+        self.assertEqual(len(builtin), 9)
+        art = next(item for item in builtin if item["slug"] == "art-3d-pipeline")
+        self.assertEqual(art["category"], "aigc")
+        self.assertEqual(art["tags"], ["3d", "blender", "modeling", "concept-art", "assets"])
+        self.assertIn(len(Path(art["path"]).read_text(encoding="utf-8").splitlines()), range(45, 76))
+        template = next(item for item in mcp_manager.load_mcp_registry()["templates"] if item["id"] == "blender")
+        self.assertEqual((template["title"], template["transport"], template["command"], template["args"]),
+                         ("Blender 3D 建模桥接", "stdio", "uvx", ["blender-mcp"]))
 
 
 class ConversationTestSuite(unittest.TestCase):

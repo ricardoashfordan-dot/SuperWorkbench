@@ -3,6 +3,8 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -14,6 +16,63 @@ _CLI_CACHE: dict = {"ts": 0.0, "data": None}
 MAX_DISCOVERED_MODELS = 50
 MAX_MODEL_ID_LEN = 120
 MAX_CACHE_BYTES = 2 * 1024 * 1024
+ROLE_SLOTS = ("planner", "builder", "reviewer")
+ROLE_FIELD_LIMITS = {"engine": 120, "model": 120, "effort": 32, "label": 64,
+                     "aigc_label": 64, "custom_label": 24, "system_prompt": 2000}
+_ROLES_LOCK = threading.RLock()
+_DEFAULT_ENGINE_ORDER = (
+    ("agy", "claude", "gemini", "codex", "dsh"),
+    ("codex", "claude", "agy", "gemini", "dsh"),
+    ("dsh", "agy", "codex", "claude", "gemini"),
+)
+_ENGINE_PROFILES = {
+    "codex": ("重型写代码与重构", "Large code changes and refactoring", ("coding", "architecture", "review")),
+    "agy": ("架构、多模态创意与审计", "Architecture, multimodal ideation, and review",
+            ("architecture", "multimodal", "writing", "review", "coding")),
+    "claude": ("长文与精细代码", "Long-form writing and detailed code", ("writing", "coding", "review")),
+    "gemini": ("长上下文与检索", "Long-context reading and retrieval",
+               ("research", "multimodal", "writing", "architecture")),
+    "dsh": ("轻量核验", "Quick verification", ("review", "fast")),
+    "openai-compat": ("API 对话与文本分析", "API chat and text analysis", ("writing", "research", "review")),
+    "custom-cli": ("自定义命令行工作流", "Custom command-line workflows", ("coding", "review")),
+}
+SCENE_PRESETS = {
+    "coding": {
+        "label_zh": "代码重活", "label_en": "Heavy coding",
+        "labels": ("架构策划", "核心主程", "独立审计"),
+        "priorities": (("agy", "claude", "gemini"), ("codex", "claude", "agy"), ("dsh", "codex", "claude")),
+        "capabilities": ("architecture", "coding", "review"),
+        "skills": ("code-review-strict", "bug-triage", "security-audit"),
+    },
+    "vibe-video": {
+        "label_zh": "视频 / Vibe 创作", "label_en": "Video and vibe creation",
+        "labels": ("创意编剧", "视觉生成", "审片质检"),
+        "priorities": (("claude", "agy", "gemini"), ("agy", "gemini", "codex"), ("gemini", "agy", "claude")),
+        "capabilities": ("writing", "multimodal", "multimodal"),
+        "skills": ("aigc-storyboard",),
+    },
+    "art-3d": {
+        "label_zh": "美术与 3D 建模", "label_en": "Art and 3D modeling",
+        "labels": ("美术总监", "建模与资产", "规范验收"),
+        "priorities": (("agy", "gemini", "claude"), ("codex", "agy", "claude"), ("gemini", "codex", "dsh")),
+        "capabilities": ("multimodal", "coding", "review"),
+        "skills": ("art-3d-pipeline", "aigc-storyboard"),
+    },
+    "paper-study": {
+        "label_zh": "论文与深度学习", "label_en": "Papers and deep learning",
+        "labels": ("论文导读", "推导与复现", "质疑自测"),
+        "priorities": (("gemini", "claude", "agy"), ("claude", "codex", "gemini"), ("agy", "gemini", "claude")),
+        "capabilities": ("research", "research", "review"),
+        "skills": ("paper-study", "deep-research"),
+    },
+    "security-audit": {
+        "label_zh": "安全与代码审计", "label_en": "Security and code review",
+        "labels": ("威胁建模", "漏洞复核", "修复验证"),
+        "priorities": (("agy", "codex", "claude"), ("codex", "claude", "agy"), ("dsh", "codex", "claude")),
+        "capabilities": ("architecture", "coding", "review"),
+        "skills": ("security-audit", "code-review-strict"),
+    },
+}
 
 # Last verified: 2026-11-23
 DEFAULT_AGY_OPTIONS = [
@@ -343,7 +402,11 @@ def delete_custom_engine(engine_id: str) -> bool:
 
 
 def list_all_engines(mask_secrets: bool = True) -> list[dict]:
-    clis = detect_cli_status()
+    detected = detect_cli_status()
+    clis = {
+        id_: {"ready": False, "path": "", **detected.get(id_, {})}
+        for id_ in ("agy", "codex", "claude", "gemini", "dsh")
+    }
     mcfg = load_model_settings()
     sources = mcfg.get("model_sources", {})
     builtin = [
@@ -371,6 +434,7 @@ def list_all_engines(mask_secrets: bool = True) -> list[dict]:
             "model_source": sources.get("codex", "fallback"),
             "can_edit_files": True,
             "supports_effort": True,
+            "default_effort": mcfg.get("codex_effort", "high"),
             "default_model": mcfg.get("codex_model", "gpt-6.2-sol"),
             "models": mcfg.get("codex_options", FALLBACK_CODEX_OPTIONS),
             "builtin": True,
@@ -424,7 +488,7 @@ def list_all_engines(mask_secrets: bool = True) -> list[dict]:
         c = dict(item)
         c["builtin"] = False
         c["ready"] = True
-        c["short"] = (c.get("name", "API")[:3]).upper()
+        c["short"] = compute_model_badge(c["id"], engine_name=c.get("name", ""))
         c["supports_effort"] = False
         if mask_secrets and c.get("api_key"):
             # defensive: never expose raw API keys in UI/API snapshots; mask before returning
@@ -433,6 +497,12 @@ def list_all_engines(mask_secrets: bool = True) -> list[dict]:
             c.pop("api_key", None)
         custom_out.append(c)
 
+    for engine in builtin + custom_out:
+        profile = _ENGINE_PROFILES.get(engine["id"] if engine["builtin"] else engine["kind"], _ENGINE_PROFILES["custom-cli"])
+        strength_zh, strength_en, capabilities = profile
+        engine.update(strength_zh=strength_zh, strength_en=strength_en, capabilities=list(capabilities))
+        if not engine.get("can_edit_files") and "coding" in engine["capabilities"]:
+            engine["capabilities"].remove("coding")
     return builtin + custom_out
 
 
@@ -443,82 +513,251 @@ def get_engine_by_id(engine_id: str, mask_secrets: bool = False) -> dict | None:
     return None
 
 
-def default_role_bindings() -> dict:
-    mcfg = load_model_settings()
-    clis = detect_cli_status()
-    # Pick best available fallback if a default CLI isn't installed on another user's machine
-    def pick(preferred: list[str]) -> str:
-        for p in preferred:
-            if clis.get(p, {}).get("ready"):
-                return p
-        return preferred[0]
-
-    p_eng = pick(["agy", "claude", "gemini", "codex", "dsh"])
-    b_eng = pick(["codex", "claude", "agy", "gemini", "dsh"])
-    r_eng = pick(["dsh", "agy", "codex", "claude", "gemini"])
-
-    def default_model(eng: str) -> str:
-        if eng == "agy":
-            return mcfg.get("agy_model", "gemini-4-neon-high")
-        if eng == "codex":
-            return mcfg.get("codex_model", "gpt-6.2-sol")
-        if eng == "dsh":
-            return "headless"
+def compute_model_badge(engine_id: str, model: str = "", engine_name: str = "") -> str:
+    engine_id = engine_id.strip().lower()
+    if not engine_id:
         return ""
+    short = {"agy": "AGY", "codex": "CDX", "claude": "CLD", "gemini": "GEM", "dsh": "DSH"}
+    model = model.strip()
+    if not model and engine_id in short:
+        return short[engine_id]
+    key = (model or engine_name.strip() or engine_id).lower().rsplit("/", 1)[-1]
+    for prefix, badge in (
+        ("deepseek-reasoner", "DSR"), ("deepseek", "DS"), ("o4-mini", "O4M"),
+        ("gpt", "GPT"), ("claude", "CLD"), ("gemini", "GEM"), ("qwen", "QWN"),
+        ("kimi", "KMI"), ("headless", "DSH"),
+    ):
+        if key.startswith(prefix):
+            return badge
+    match = re.match(r"^(o[0-9]+)(?:[-_:]|$)", key)
+    if match:
+        return match[1][:4].upper()
+    compact = re.sub(r"[^a-z0-9]", "", key)
+    if len(compact) >= 2:
+        return compact[:4].upper()
+    if engine_id in short:
+        return short[engine_id]
+    for value in (engine_name, engine_id):
+        compact = re.sub(r"[^a-z0-9]", "", value.lower())
+        if len(compact) >= 2:
+            return compact[:4].upper()
+    return "AI"
 
+
+def _available_engines(engines: list[dict]) -> dict:
+    return {engine["id"]: engine for engine in engines if engine["ready"]}
+
+
+def _pick_engine(preferred: tuple[str, ...], available: dict) -> dict:
+    return next((available[id_] for id_ in preferred if id_ in available), next(iter(available.values()), {}))
+
+
+def _binding(engine: dict) -> dict:
+    return {"engine": engine.get("id", ""), "model": engine.get("default_model", "")}
+
+
+def _with_badge(role: dict, available: dict) -> dict:
+    engine = available.get(role["engine"], {})
+    return {**role, "badge": compute_model_badge(role["engine"], role["model"], engine.get("name", ""))}
+
+
+def _default_roles(available: dict) -> dict:
+    labels = (("策划 · 方案", "编剧 · 分镜"), ("核心执行", "制片 · 剪辑"), ("独立质检", "审片 · 质检"))
+    efforts = ("high", available.get("codex", {}).get("default_effort", "high"), "medium")
     return {
-        "planner": {
-            "id": "planner",
-            "label": "策划 · 方案",
-            "aigc_label": "编剧 · 分镜",
-            "custom_label": "",
-            "system_prompt": "",
-            "engine": p_eng,
-            "model": default_model(p_eng),
-            "effort": "high",
-        },
-        "builder": {
-            "id": "builder",
-            "label": "核心执行",
-            "aigc_label": "制片 · 剪辑",
-            "custom_label": "",
-            "system_prompt": "",
-            "engine": b_eng,
-            "model": default_model(b_eng),
-            "effort": mcfg.get("codex_effort", "high"),
-        },
-        "reviewer": {
-            "id": "reviewer",
-            "label": "独立质检",
-            "aigc_label": "审片 · 质检",
-            "custom_label": "",
-            "system_prompt": "",
-            "engine": r_eng,
-            "model": default_model(r_eng),
-            "effort": "medium",
-        },
+        slot: {
+            "id": slot, "label": label, "aigc_label": aigc_label,
+            "custom_label": "", "system_prompt": "", "effort": effort,
+            **_binding(_pick_engine(preferred, available)),
+        }
+        for slot, (label, aigc_label), effort, preferred in zip(ROLE_SLOTS, labels, efforts, _DEFAULT_ENGINE_ORDER)
     }
 
 
-def load_role_bindings() -> dict:
-    defaults = default_role_bindings()
-    if not config.ROLES_PATH.exists():
-        save_role_bindings(defaults)
-        return defaults
+def default_role_bindings() -> dict:
+    available = _available_engines(list_all_engines())
+    return {slot: _with_badge(role, available) for slot, role in _default_roles(available).items()}
+
+
+def _read_saved_roles() -> dict:
     saved = config.read_json(config.ROLES_PATH, {})
-    merged = {}
-    for slot_id, def_val in defaults.items():
-        cur = dict(def_val)
-        if isinstance(saved.get(slot_id), dict):
-            for k in ("label", "aigc_label", "custom_label", "system_prompt", "engine", "model", "effort"):
-                if saved[slot_id].get(k) is not None:
-                    cur[k] = saved[slot_id][k]
-        merged[slot_id] = cur
-    return merged
+    return saved if isinstance(saved, dict) else {}
 
 
-def save_role_bindings(data: dict) -> None:
-    config.write_json(config.ROLES_PATH, data)
+def _workspace_map(saved: dict) -> dict:
+    workspaces = saved.get("workspaces", {})
+    return workspaces if isinstance(workspaces, dict) else {}
+
+
+def _role_fields(value: object) -> dict:
+    if not isinstance(value, dict):
+        return {}
+    return {key: value[key] for key in ROLE_FIELD_LIMITS if isinstance(value.get(key), str)}
+
+
+def _merge_role(role: dict, patch: object) -> dict:
+    fields = _role_fields(patch)
+    if "engine" in fields and fields["engine"] != role.get("engine"):
+        fields.setdefault("model", "")
+    return {**role, **fields}
+
+
+def get_workspace_roster(ws_id: str | None = None, *, engines: list[dict] | None = None) -> dict:
+    available = _available_engines(list_all_engines() if engines is None else engines)
+    with _ROLES_LOCK:
+        saved = _read_saved_roles()
+    override = _workspace_map(saved).get(ws_id)
+    scene = override.get("scene", "") if isinstance(override, dict) else ""
+    if not isinstance(scene, str) or scene not in SCENE_PRESETS:
+        scene = ""
+    fallback = _scene_roles(scene, available) if scene else _default_roles(available)
+    roles = {}
+    for slot, default in _default_roles(available).items():
+        role = _merge_role(default, saved.get(slot))
+        if isinstance(override, dict):
+            role = _merge_role(role, override.get(slot))
+        if role["engine"] and role["engine"] not in available:
+            role.update(engine=fallback[slot]["engine"], model=fallback[slot]["model"])
+        if not role["engine"]:
+            role["model"] = ""
+        roles[slot] = _with_badge(role, available)
+    return {
+        "roles": roles, "active_scene": scene,
+        "roles_scope": "workspace" if isinstance(override, dict) else "global",
+        "recommended_skills": list(SCENE_PRESETS[scene]["skills"]) if scene else [],
+    }
+
+
+def load_role_bindings(ws_id: str | None = None) -> dict:
+    return get_workspace_roster(ws_id)["roles"]
+
+
+def _write_saved_roles(saved: dict) -> None:
+    config.ROLES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=config.ROLES_PATH.parent, delete=False) as file:
+            tmp = Path(file.name)
+            json.dump(saved, file, ensure_ascii=False, indent=2)
+            file.write("\n")
+        os.replace(tmp, config.ROLES_PATH)
+    finally:
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)
+
+
+def save_role_bindings(data: dict, ws_id: str | None = None, *, scene: str | None = None) -> None:
+    if scene is not None and (not isinstance(scene, str) or (scene and scene not in SCENE_PRESETS)):
+        raise ValueError("未知的阵容场景")
+    updates = {slot: fields for slot in ROLE_SLOTS if (fields := _role_fields(data.get(slot)))}
+    if not updates and scene is None:
+        return
+    with _ROLES_LOCK:
+        saved = _read_saved_roles()
+        target = saved
+        if ws_id is not None:
+            workspaces = _workspace_map(saved)
+            saved["workspaces"] = workspaces
+            entry = workspaces.get(ws_id)
+            target = entry if isinstance(entry, dict) else {}
+            workspaces[ws_id] = target
+            if scene is not None:
+                target["scene"] = scene
+        for slot, fields in updates.items():
+            target[slot] = _merge_role(_role_fields(target.get(slot)), fields)
+        _write_saved_roles(saved)
+
+
+def reset_workspace_roles(ws_id: str) -> dict:
+    with _ROLES_LOCK:
+        saved = _read_saved_roles()
+        workspaces = _workspace_map(saved)
+        if ws_id in workspaces:
+            del workspaces[ws_id]
+            _write_saved_roles(saved)
+    return load_role_bindings(ws_id)
+
+
+def list_role_scenes() -> list[dict]:
+    return [
+        {"id": id_, "label_zh": preset["label_zh"], "label_en": preset["label_en"],
+         "role_labels": dict(zip(ROLE_SLOTS, preset["labels"])), "recommended_skills": list(preset["skills"])}
+        for id_, preset in SCENE_PRESETS.items()
+    ]
+
+
+def _scene_roles(scene: str, available: dict) -> dict:
+    roles = _default_roles(available)
+    preset = SCENE_PRESETS[scene]
+    for slot, label, preferred, capability, default_order in zip(
+        ROLE_SLOTS, preset["labels"], preset["priorities"], preset["capabilities"], _DEFAULT_ENGINE_ORDER
+    ):
+        matches = tuple(id_ for id_, engine in available.items() if capability in engine.get("capabilities", []))
+        roles[slot].update(custom_label=label, **_binding(_pick_engine(preferred + matches + default_order, available)))
+    return roles
+
+
+def recommend_workspace_roster(scene_id: str, ws_id: str | None = None) -> dict:
+    if not isinstance(scene_id, str) or scene_id not in SCENE_PRESETS:
+        raise ValueError("未知的阵容场景")
+    available = _available_engines(list_all_engines())
+    roles = {slot: _with_badge(role, available) for slot, role in _scene_roles(scene_id, available).items()}
+    preset = SCENE_PRESETS[scene_id]
+    assigned = [available.get(role["engine"], {}).get("name", "—") for role in roles.values()]
+    choices = " / ".join(assigned)
+    return {
+        "scene": scene_id, "roles": roles,
+        "reason_zh": f"{preset['label_zh']}按策划、执行、质检顺序分配当前可用引擎：{choices}。"
+        if available else "当前没有可用引擎，三个角色均待配置。",
+        "reason_en": f"{preset['label_en']} selects available engines for planner, builder, and reviewer: {choices}."
+        if available else "No engines are available. All three roles are unconfigured.",
+        "recommended_skills": list(preset["skills"]),
+    }
+
+
+def export_roster_preset(ws_id: str) -> dict:
+    roster = get_workspace_roster(ws_id)
+    return {
+        "version": 1, "scene": roster["active_scene"],
+        "roles": {slot: _role_fields(role) for slot, role in roster["roles"].items()},
+        "recommended_skills": roster["recommended_skills"],
+    }
+
+
+def import_roster_preset(preset: object, ws_id: str) -> dict:
+    if not isinstance(preset, dict) or set(preset) - {"version", "scene", "roles", "recommended_skills"}:
+        raise ValueError("阵容预设必须是 JSON 对象，且只能包含预设字段")
+    version = preset.get("version", 1)
+    if type(version) is not int or version != 1:
+        raise ValueError("不支持该阵容预设版本")
+    scene = preset.get("scene", "")
+    if not isinstance(scene, str) or (scene and scene not in SCENE_PRESETS):
+        raise ValueError("未知的阵容场景")
+    skills = preset.get("recommended_skills", [])
+    if not isinstance(skills, list) or len(skills) > 32 or any(
+        not isinstance(slug, str) or re.fullmatch(r"[a-z0-9_-]{1,80}", slug) is None for slug in skills
+    ):
+        raise ValueError("推荐技能必须是有效的技能 slug 列表")
+    raw_roles = preset.get("roles")
+    if not isinstance(raw_roles, dict) or set(raw_roles) != set(ROLE_SLOTS):
+        raise ValueError("阵容预设必须包含策划、执行和质检角色")
+    available = _available_engines(list_all_engines())
+    defaults = _scene_roles(scene, available) if scene else _default_roles(available)
+    roles = {}
+    for slot, raw in raw_roles.items():
+        if not isinstance(raw, dict) or set(raw) - ROLE_FIELD_LIMITS.keys():
+            raise ValueError(f"角色 {slot} 含有未知字段")
+        for key, value in raw.items():
+            if not isinstance(value, str) or len(value) > ROLE_FIELD_LIMITS[key] or "\0" in value:
+                raise ValueError(f"角色 {slot} 的 {key} 类型或长度无效")
+        role = _merge_role(defaults[slot], {key: value.strip() for key, value in raw.items()})
+        if role["engine"] and role["engine"] not in available:
+            role.update(engine=defaults[slot]["engine"], model=defaults[slot]["model"])
+        if not role["engine"]:
+            role["model"] = ""
+        roles[slot] = role
+    save_role_bindings(roles, ws_id, scene=scene)
+    return get_workspace_roster(ws_id)
 
 
 def stream_openai_compat(

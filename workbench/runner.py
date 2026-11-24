@@ -342,10 +342,16 @@ class JobManager:
         system_prompt: str,
         ws_path: str,
         image_paths: list[str] | None = None,
+        *,
+        ws_id: str | None = None,
     ) -> tuple[int, str]:
-        roles = adapters.load_role_bindings()
-        role_cfg = roles.get(slot) or roles["planner"]
-        eng_id = role_cfg.get("engine", "agy")
+        roles = adapters.load_role_bindings(ws_id)
+        role_cfg = roles.get(slot, {})
+        eng_id = role_cfg.get("engine", "")
+        if not eng_id:
+            msg = f"角色 {slot} 尚未配置引擎，请在「模型与角色配置」中选择可用引擎。"
+            self.append_log(msg)
+            return 1, msg
         eng = adapters.get_engine_by_id(eng_id, mask_secrets=False)
         if not eng:
             msg = f"未找到槽位 {slot} 绑定的引擎 `{eng_id}`，请在左下角「模型与角色配置」重新选择。"
@@ -542,7 +548,7 @@ class JobManager:
 
                 sys_p = "你是对话上下文压缩器。请将对话记录浓缩为一份高密度、结构化的中文工作记忆摘要（不超过 450 字），保留：1.核心目标；2.已敲定的关键决策；3.已改文件/产物；4.待办下一步。"
                 user_p = f"请严格压缩以下会话内容（绝对不要调用任何工具，直接输出 Markdown 摘要正文）：\n\n{transcript}"
-                rc, summary = self._run_slot_blocking("planner", user_p, sys_p, ws_path)
+                rc, summary = self._run_slot_blocking("planner", user_p, sys_p, ws_path, ws_id=ws_id)
                 if rc != 0 or not summary.strip():
                     bullets = []
                     for m in t_msgs[-10:]:
@@ -617,7 +623,7 @@ class JobManager:
             self.append_log(f"已附带 {len(attachments or [])} 个附件/图片")
         att_section = f"\n\n{att_block}\n" if att_block else ""
 
-        role_cfg = adapters.load_role_bindings().get(slot, {})
+        role_cfg = adapters.load_role_bindings(ws_id).get(slot, {})
         custom_label = str(role_cfg.get("custom_label", "") or "").strip()
         custom_sys = str(role_cfg.get("system_prompt", "") or "").strip()
 
@@ -680,7 +686,7 @@ class JobManager:
                 sys_p, user_p, img_paths = self._build_prompts(
                     slot, instruction, workspace, skill_ids, thread_id, attachments, history_context=history_context
                 )
-                rc, full_reply = self._run_slot_blocking(slot, user_p, sys_p, ws_path, image_paths=img_paths)
+                rc, full_reply = self._run_slot_blocking(slot, user_p, sys_p, ws_path, image_paths=img_paths, ws_id=ws_id)
                 with self.lock:
                     self.exit_code = rc
                     eng_label = self.engine_name or slot.upper()
@@ -700,7 +706,7 @@ class JobManager:
             sys1, user1, img_paths = self._build_prompts(
                 "planner", instruction, workspace, skill_ids, thread_id, attachments, history_context=history_context
             )
-            rc1, reply1 = self._run_slot_blocking("planner", user1, sys1, ws_path, image_paths=img_paths)
+            rc1, reply1 = self._run_slot_blocking("planner", user1, sys1, ws_path, image_paths=img_paths, ws_id=ws_id)
             if self.abort_requested or rc1 != 0:
                 with self.lock:
                     rc1 = 130 if self.abort_requested else rc1
@@ -759,7 +765,8 @@ class JobManager:
         user2 += f"\n\n策划拆解方案：\n{plan_body}"
         if extra_note:
             user2 += f"\n\n用户审批补充说明：\n{extra_note}"
-        rc2, reply2 = self._run_slot_blocking("builder", user2, sys2, ws_path, image_paths=img_paths2)
+        ws_id = workspace.get("id")
+        rc2, reply2 = self._run_slot_blocking("builder", user2, sys2, ws_path, image_paths=img_paths2, ws_id=ws_id)
         if self.abort_requested or rc2 != 0:
             with self.lock:
                 rc2 = 130 if self.abort_requested else rc2
@@ -778,7 +785,7 @@ class JobManager:
                     "reviewer", instruction, workspace, skill_ids, thread_id, history_context=history_context
                 )
                 user3 += f"\n\n执行方汇报：\n{reply2}\n\n请结合汇报给出简洁清晰的验收建议。"
-                rc3, reply3 = self._run_slot_blocking("reviewer", user3, sys3, ws_path)
+                rc3, reply3 = self._run_slot_blocking("reviewer", user3, sys3, ws_path, ws_id=ws_id)
         except Exception as exc:
             rc3, reply3 = 1, str(exc)
             failure_title = "质检阶段异常"
@@ -913,7 +920,7 @@ class JobManager:
                 f"【新增未跟踪文件】\n{untracked}\n\n"
                 f"【Diff】\n{ctx.get('diff') or '(无)'}"
             )
-            rc, reply = self._run_slot_blocking("planner", user_p, sys_p, ws_path)
+            rc, reply = self._run_slot_blocking("planner", user_p, sys_p, ws_path, ws_id=workspace.get("id"))
             msg = _clean_commit_message(reply)
             if rc != 0 or not msg:
                 msg = _fallback_commit_message(ctx)

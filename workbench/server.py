@@ -191,6 +191,7 @@ def build_snapshot() -> dict:
         if candidate.exists():
             stage_concept = str(candidate)
 
+    engines = adapters.list_all_engines(mask_secrets=True)
     return {
         "version": get_version(),
         "state": state,
@@ -200,8 +201,9 @@ def build_snapshot() -> dict:
         "active_thread": active_thread,
         "clis": adapters.detect_cli_status(),
         "models": adapters.load_model_settings(),
-        "roles": adapters.load_role_bindings(),
-        "engines": adapters.list_all_engines(mask_secrets=True),
+        **adapters.get_workspace_roster(ws_id, engines=engines),
+        "scenes": adapters.list_role_scenes(),
+        "engines": engines,
         "skills": disk.get("skills", []),
         "mcp": mcp_manager.load_mcp_registry(mask_secrets=True),
         "settings": config.load_app_settings(),
@@ -619,21 +621,42 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/roles":
-            roles = adapters.load_role_bindings()
-            updates = data.get("roles") if isinstance(data.get("roles"), dict) else data
-            for slot_id in ("planner", "builder", "reviewer"):
-                patch = updates.get(slot_id)
-                if isinstance(patch, dict):
-                    for k in ("engine", "model", "effort", "label", "aigc_label", "custom_label", "system_prompt"):
-                        if k in patch and patch[k] is not None:
-                            val = str(patch[k]).strip()
-                            if k == "custom_label":
-                                val = val[:24]
-                            elif k == "system_prompt":
-                                val = val[:2000]
-                            roles[slot_id][k] = val
-            adapters.save_role_bindings(roles)
-            self._send_json({"ok": True, "roles": roles, "snapshot": build_snapshot()})
+            ws_id = active_ws.get("id", "super-workbench")
+            action = data.get("action", "save")
+            try:
+                if action == "export_preset":
+                    self._send_json({"ok": True, "preset": adapters.export_roster_preset(ws_id)})
+                    return
+                if action == "apply_scene":
+                    result = adapters.recommend_workspace_roster(data.get("scene"), ws_id)
+                    adapters.save_role_bindings(result["roles"], ws_id, scene=result["scene"])
+                elif action == "reset_workspace":
+                    result = {"roles": adapters.reset_workspace_roles(ws_id)}
+                elif action == "import_preset":
+                    result = adapters.import_roster_preset(data.get("preset"), ws_id)
+                elif action == "save":
+                    scope = data.get("scope", "workspace")
+                    if scope not in ("workspace", "global"):
+                        raise ValueError("阵容保存范围必须是 workspace 或 global")
+                    target_ws_id = ws_id if scope == "workspace" else None
+                    payload = data.get("roles") if isinstance(data.get("roles"), dict) else data
+                    updates = {}
+                    for slot in adapters.ROLE_SLOTS:
+                        fields = payload.get(slot)
+                        if isinstance(fields, dict):
+                            updates[slot] = {
+                                key: str(fields[key]).strip()[:limit]
+                                for key, limit in adapters.ROLE_FIELD_LIMITS.items()
+                                if fields.get(key) is not None
+                            }
+                    adapters.save_role_bindings(updates, target_ws_id)
+                    result = {"roles": adapters.load_role_bindings(target_ws_id)}
+                else:
+                    raise ValueError("未知的阵容操作")
+            except ValueError as exc:
+                self._send_json({"ok": False, "error": str(exc)}, 400)
+                return
+            self._send_json({"ok": True, **result, "snapshot": build_snapshot()})
             return
 
         if parsed.path == "/api/engines":
