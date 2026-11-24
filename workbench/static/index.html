@@ -188,6 +188,9 @@
             <input type="file" id="imgPicker" accept="image/*" multiple style="display:none;" onchange="handlePickedFiles(this.files); this.value='';" />
             <input type="file" id="filePicker" multiple style="display:none;" onchange="handlePickedFiles(this.files); this.value='';" />
 
+            <!-- Compact Workspace Roster & Scene Popover (1-click per-workspace team switch!) -->
+            <div class="roster-popover" id="rosterPopover"></div>
+
             <div class="attached-skills" id="attachedSkillsBar"></div>
             <textarea id="cmdInput" rows="1" placeholder="输入想法或指令… 支持点 + 添加图片/附件/技能，直接粘贴截图，或 Ctrl+Enter 发送"></textarea>
             <div class="composer-bar">
@@ -197,19 +200,23 @@
                 </button>
                 <div class="mode-pills" id="modePills">
                   <button class="mode-pill active" data-mode="agy" onclick="setMode('agy')">
-                    <i class="agent-dot agy" style="width:6px;height:6px;"></i><span id="pill-label-agy">策划 · AGY</span>
+                    <i class="agent-dot agy" style="width:6px;height:6px;"></i><span id="pill-label-agy">策划</span>
                   </button>
                   <button class="mode-pill" data-mode="codex" onclick="setMode('codex')">
-                    <i class="agent-dot codex" style="width:6px;height:6px;"></i><span id="pill-label-codex">执行 · CDX</span>
+                    <i class="agent-dot codex" style="width:6px;height:6px;"></i><span id="pill-label-codex">执行</span>
                   </button>
                   <button class="mode-pill" data-mode="pipeline" onclick="setMode('pipeline')">
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                     全自动流转
                   </button>
                   <button class="mode-pill" data-mode="dsh" onclick="setMode('dsh')">
-                    <i class="agent-dot dsh" style="width:6px;height:6px;"></i><span id="pill-label-dsh">质检 · DSH</span>
+                    <i class="agent-dot dsh" style="width:6px;height:6px;"></i><span id="pill-label-dsh">质检</span>
                   </button>
                 </div>
+                <button class="mode-pill roster-trigger" id="btnRosterPopover" title="为当前工作空间切换场景与角色阵容" onclick="toggleRosterPopover()">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                  <span id="rosterTriggerText">切换阵容</span>
+                </button>
               </div>
               <div style="display:flex;align-items:center;gap:8px;">
                 <span style="font-size:11.5px;color:var(--text-muted);" id="composerHint"></span>
@@ -239,30 +246,30 @@
           </g>
 
           <g class="rail-node" id="rnode-agy" transform="translate(23,106)" onclick="setMode('agy')">
-            <title id="rtitle-agy">策划 · Antigravity</title>
+            <title id="rtitle-agy">策划</title>
             <circle class="rail-ripple" id="rrip-agy" r="14" />
             <circle class="rail-pulse" r="16" />
             <circle class="rail-ring" r="13.5" />
             <circle cx="9.5" cy="-9.5" r="2.8" fill="var(--c-agy)" />
-            <text y="3.2" text-anchor="middle" class="rail-label" id="rtxt-agy">AGY</text>
+            <text y="3.2" text-anchor="middle" class="rail-label" id="rtxt-agy">—</text>
           </g>
 
           <g class="rail-node" id="rnode-codex" transform="translate(23,182)" onclick="setMode('codex')">
-            <title id="rtitle-codex">执行 · Codex</title>
+            <title id="rtitle-codex">执行</title>
             <circle class="rail-ripple" id="rrip-codex" r="14" />
             <circle class="rail-pulse" r="16" />
             <circle class="rail-ring" r="13.5" />
             <circle cx="9.5" cy="-9.5" r="2.8" fill="var(--c-codex)" />
-            <text y="3.2" text-anchor="middle" class="rail-label" id="rtxt-codex">CDX</text>
+            <text y="3.2" text-anchor="middle" class="rail-label" id="rtxt-codex">—</text>
           </g>
 
           <g class="rail-node" id="rnode-dsh" transform="translate(23,258)" onclick="setMode('dsh')">
-            <title id="rtitle-dsh">质检 · DSH</title>
+            <title id="rtitle-dsh">质检</title>
             <circle class="rail-ripple" id="rrip-dsh" r="14" />
             <circle class="rail-pulse" r="16" />
             <circle class="rail-ring" r="13.5" />
             <circle cx="9.5" cy="-9.5" r="2.8" fill="var(--c-dsh)" />
-            <text y="3.2" text-anchor="middle" class="rail-label" id="rtxt-dsh">DSH</text>
+            <text y="3.2" text-anchor="middle" class="rail-label" id="rtxt-dsh">—</text>
           </g>
 
           <!-- Minimalist 12px Paper Plane -->
@@ -630,9 +637,17 @@
           <button class="btn sm" onclick="autoRecommendRoles()">一键推荐配置</button>
         </div>
         <div id="roleSlotsContainer" style="display:flex;flex-direction:column;gap:10px;"></div>
-        <div class="modal-foot">
-          <button class="btn solid" onclick="saveRoleBindings()">保存角色配置</button>
+        <div class="modal-foot" style="justify-content:space-between;flex-wrap:wrap;gap:8px;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span style="font-size:11.5px;color:var(--text-muted);" id="rolesScopeBadge">当前空间独立阵容</span>
+            <button class="btn sm" id="btnResetWsRoles" onclick="resetWorkspaceRoster()" style="display:none;">恢复继承全局</button>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn" id="btnSaveRolesGlobal" onclick="saveRoleBindings('global')">保存为全局默认</button>
+            <button class="btn solid" id="btnSaveRolesWorkspace" onclick="saveRoleBindings('workspace')">保存到当前空间</button>
+          </div>
         </div>
+        <input id="rosterPresetFileInput" type="file" accept=".json,application/json" style="display:none;" onchange="handleImportRosterFile(this)" />
       </div>
 
       <!-- Pane 3: Engines & Custom API / Ollama -->
