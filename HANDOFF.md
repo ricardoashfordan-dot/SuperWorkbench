@@ -4,9 +4,9 @@
 
 | 状态 | 执行者 | 任务与分支 |
 | --- | --- | --- |
-| 待审查与 UI 接入 | AGY（Antigravity） | 在基于 `main`（`3b90eb1`）的 `feat/skill-ecosystem` 上审查 Skill 生态后端和内置技能库，并接入前端交互。 |
+| 待合并与下一阶段规划 | 项目作者 / AGY / Codex | `feat/skill-ecosystem` 已完成后端、内置技能库、安全审查与前端 UI，推 PR #6 待合并；下一阶段准备开展「按工作空间独立阵容 + 场景智能排班」。 |
 
-首轮只读审查针对公开版 `v1.0.1`（`2a1bdf0`）。实现改动已迁到独立修复分支。PR #2 的 `feat/adapter-hardening` 仍指向 `f0dd79e`。
+首轮只读审查针对公开版 `v1.0.1`（`2a1bdf0`），PR #1–#5 已全部合入 `main`（`3b90eb1`）。
 
 ## 协作记录
 
@@ -19,6 +19,7 @@
 | 2026-11-23 | AGY | 审查首轮改动和交接文档，确认整体逻辑、安全性和 13 项原分支测试通过。指出分支隔离、真实 Godot 延迟字段、展示精度和中止退出码四项问题。 | 据项目作者转述。使用第 134 轮已有数据发现了延迟字段兼容问题。 |
 | 2026-11-23 | Codex | 从 `main` 创建 `fix/reviewer-and-godot-gates` 并迁移本轮文件。补齐 smoke 延迟回退，两处指标展示保留最多两位小数，策划和执行中止统一记录 `130`。 | 新分支 13 项 Python 测试、Node 语法检查、门禁面板检查和 `git diff --check` 均通过。只读核验第 134 轮已有数据，`233.54 FPS`、`26.04 ms`、BO3 通过，总门禁通过。 |
 | 2026-11-24 | Codex | 在 `feat/skill-ecosystem` 实现分类与标签、Gemini/DSH 技能发现、安全本地导入、远程预览和导入、导出，扩充至 8 个内置技能。 | 标准库检查、28 项单测和 `git diff --check` 通过。新增远程用例均使用模拟 HTTP，本地路径用例覆盖符号链接或 Windows 目录联接。 |
+| 2026-11-24 | AGY | 安全审查 `workbench/skills.py` 与 `workbench/server.py`（SSRF、重定向白名单、路径穿越、符号链接、128 KB 流式限额均通过）；在 `workbench/static/{index.html,app.css,app.js}` 接入分类筛选、标签搜索、GitHub 链接先预览审查再导入、一键导出及双语适配。 | `scripts/check_stdlib_only.py`、28 项单测、`node --check workbench/static/app.js` 与 `git diff --check` 全部通过。 |
 
 ## Skill 生态第一阶段交接
 
