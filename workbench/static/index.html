@@ -541,9 +541,21 @@
             <button class="btn sm" data-sf="custom" onclick="setSkillFilter('custom')">自定义</button>
             <button class="btn sm" data-sf="ext" onclick="setSkillFilter('ext')">本机发现</button>
           </div>
-          <div style="display:flex;gap:6px;">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
             <button class="btn sm" onclick="toggleSkillCreateBox()">+ 新建技能</button>
+            <button class="btn sm" id="btnToggleSkillUrl" onclick="toggleSkillUrlBox()">从 GitHub 导入</button>
             <button class="btn sm" onclick="toggleSkillImportBox()">导入本地 Skill</button>
+          </div>
+        </div>
+
+        <div class="skill-search-bar">
+          <input id="skillSearchInput" type="search" oninput="onSkillSearch(this.value)" placeholder="搜索技能名称、标签或用途..." />
+          <div style="display:flex;gap:4px;flex-wrap:wrap;" id="skillCategoryBar">
+            <button class="btn sm solid" data-sc="all" onclick="setSkillCategory('all')">全部分类</button>
+            <button class="btn sm" data-sc="engineering" onclick="setSkillCategory('engineering')">研发</button>
+            <button class="btn sm" data-sc="research" onclick="setSkillCategory('research')">调研学习</button>
+            <button class="btn sm" data-sc="aigc" onclick="setSkillCategory('aigc')">AIGC</button>
+            <button class="btn sm" data-sc="general" onclick="setSkillCategory('general')">通用</button>
           </div>
         </div>
 
@@ -560,6 +572,18 @@
               </select>
             </div>
           </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div class="field">
+              <label>技能分类</label>
+              <select id="newSkillCategory">
+                <option value="general">通用</option>
+                <option value="engineering">研发</option>
+                <option value="research">调研学习</option>
+                <option value="aigc">AIGC</option>
+              </select>
+            </div>
+            <div class="field"><label>标签（逗号分隔，可选）</label><input id="newSkillTags" placeholder="例如：review, security, python" /></div>
+          </div>
           <div class="field"><label>一句话用途说明（展示给小白和 / 菜单）</label><input id="newSkillDesc" placeholder="例如：按爆款钩子+结构化分镜表输出 60 秒漫剧脚本" /></div>
           <div class="field">
             <label>具体执行规范（直接用大白话写清楚要求即可）</label>
@@ -569,6 +593,16 @@
             <button class="btn sm" onclick="toggleSkillCreateBox(false)">取消</button>
             <button class="btn sm solid" onclick="submitCreateSkill()">创建并启用</button>
           </div>
+        </div>
+
+        <!-- Inline Import Remote Skill Form (Preview Before Install!) -->
+        <div class="insp-card" id="skillUrlBox" style="display:none;">
+          <div class="insp-card-title" id="skillUrlBoxTitle">从 GitHub 导入 Skill（仅支持 HTTPS GitHub 链接，先审查正文再导入）</div>
+          <div style="display:flex;gap:6px;">
+            <input id="importSkillUrl" style="flex:1;background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:12.5px;" placeholder="粘贴 GitHub 仓库、目录或 SKILL.md 链接，如 https://github.com/owner/repo/blob/main/SKILL.md" />
+            <button class="btn sm solid" id="btnPreviewSkillUrl" onclick="previewRemoteSkill()">预览审查</button>
+          </div>
+          <div id="skillUrlPreview" style="display:none;flex-direction:column;gap:8px;margin-top:4px;"></div>
         </div>
 
         <!-- Inline Import Local Skill Form -->

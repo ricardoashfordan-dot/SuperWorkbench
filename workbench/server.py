@@ -668,6 +668,7 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                     self._send_json({"ok": True, "snapshot": build_snapshot()})
                     return
                 if action == "create":
+                    tags = data.get("tags", "")
                     created = skills.create_skill(
                         name=str(data.get("name", "")),
                         description=str(data.get("description", "")),
@@ -675,6 +676,8 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                         scope=str(data.get("scope", "user")),
                         ws_path=ws_path,
                         ws_id=ws_id,
+                        category=str(data.get("category") or "general"),
+                        tags=tags if isinstance(tags, (str, list)) else "",
                     )
                     _WS_DISK_CACHE.clear()
                     self._send_json({"ok": True, "skill": created, "snapshot": build_snapshot()})
@@ -683,6 +686,19 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                     imported = skills.import_local_skill(str(data.get("source_path", "")), ws_id)
                     _WS_DISK_CACHE.clear()
                     self._send_json({"ok": True, "skill": imported, "snapshot": build_snapshot()})
+                    return
+                if action == "preview_url":
+                    preview = skills.preview_remote_skill(str(data.get("url", "")))
+                    self._send_json({"ok": True, "skill": preview})
+                    return
+                if action == "import_url":
+                    imported = skills.install_remote_skill(str(data.get("url", "")), ws_id)
+                    _WS_DISK_CACHE.clear()
+                    self._send_json({"ok": True, "skill": imported, "snapshot": build_snapshot()})
+                    return
+                if action == "export":
+                    exported = skills.export_skill(str(data.get("id", "")).strip(), ws_id, ws_path)
+                    self._send_json({"ok": True, "skill": exported})
                     return
                 if action == "delete":
                     sid = str(data.get("id", "")).strip()
@@ -693,7 +709,7 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                     _WS_DISK_CACHE.clear()
                     self._send_json({"ok": True, "snapshot": build_snapshot()})
                     return
-            except ValueError as exc:
+            except (ValueError, OSError) as exc:
                 self._send_json({"ok": False, "error": str(exc)}, 400)
                 return
 

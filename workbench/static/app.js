@@ -101,6 +101,9 @@ function openGuideModal() { document.getElementById("guideModal").classList.add(
 function closeGuideModal() { document.getElementById("guideModal").classList.remove("show"); }
 
 let currentSkillFilter = "all";
+let currentSkillCategory = "all";
+let currentSkillQuery = "";
+let pendingRemoteSkillUrl = "";
 let attachedSkillIds = [];
 let currentLang = localStorage.getItem("sw_lang") || "zh";
 
@@ -119,13 +122,27 @@ function fmtSkillSource(label) {
   if (currentLang !== "en") return label;
   const map = {
     "内置推荐": "Built-in",
+    "自定义技能": "Custom",
     "自定义全局": "Global Custom",
     "当前空间": "Workspace",
     "本机 Codex": "Local Codex",
     "本机 AGY": "Local AGY",
-    "本机 Claude": "Local Claude"
+    "本机 Gemini": "Local Gemini",
+    "本机 Claude": "Local Claude",
+    "本机 DSH": "Local DSH"
   };
   return map[label] || label;
+}
+
+function fmtSkillCategory(cat) {
+  const key = String(cat || "general").toLowerCase();
+  const map = {
+    engineering: t("研发", "Engineering"),
+    research: t("调研学习", "Research"),
+    aigc: t("AIGC", "AIGC"),
+    general: t("通用", "General")
+  };
+  return map[key] || cat || t("通用", "General");
 }
 
 function fmtSkillDesc(skill) {
@@ -133,7 +150,12 @@ function fmtSkillDesc(skill) {
   const enMap = {
     "aigc-storyboard": "Break down rough ideas or novel chapters into a structured AIGC short-drama storyboard table (3s hook, camera framing, and character consistency prompts).",
     "code-review-strict": "Evidence-bound strict code audit & refactoring checklist (pinpoint edge-case bugs, race conditions, performance bottlenecks, and security hazards).",
-    "git-commit-release": "Draft clean Conventional Commit messages, bilingual changelogs, and GitHub Release notes automatically."
+    "git-commit-release": "Draft clean Conventional Commit messages, bilingual changelogs, and GitHub Release notes automatically.",
+    "security-audit": "Audit code for authentication, injection, path traversal, SSRF, and secret-handling risks with concrete evidence and fixes.",
+    "bug-triage": "Systematic bug triage workflow: minimal reproduction, root-cause isolation, targeted fix, and regression test verification.",
+    "doc-writer": "Write concise, accurate READMEs, architecture notes, and release documentation grounded in real code.",
+    "deep-research": "Compare options across sources with clear evidence, trade-offs, and actionable recommendations.",
+    "paper-study": "Break down papers or textbook chapters into core concepts, derivations, common pitfalls, and self-check questions."
   };
   return enMap[skill.slug] || skill.description || "";
 }
@@ -220,12 +242,24 @@ const STATIC_I18N = [
   ["#skillFilterBar button[data-sf='custom']", "自定义", "Custom"],
   ["#skillFilterBar button[data-sf='ext']", "本机发现", "Discovered"],
   ["#pane-skills button[onclick*='toggleSkillCreateBox']", "+ 新建技能", "+ New Skill"],
+  ["#btnToggleSkillUrl", "从 GitHub 导入", "Import from GitHub"],
   ["#pane-skills button[onclick*='toggleSkillImportBox']", "导入本地 Skill", "Import Local Skill"],
+  ["#skillCategoryBar button[data-sc='all']", "全部分类", "All Categories"],
+  ["#skillCategoryBar button[data-sc='engineering']", "研发", "Engineering"],
+  ["#skillCategoryBar button[data-sc='research']", "调研学习", "Research"],
+  ["#skillCategoryBar button[data-sc='aigc']", "AIGC", "AIGC"],
+  ["#skillCategoryBar button[data-sc='general']", "通用", "General"],
   ["#skillCreateBox .insp-card-title", "创建新技能（自动生成标准 SKILL.md，无需懂 YAML）", "Create New Skill (Auto-generates standard SKILL.md)"],
   ["#newSkillScope option[value='user']", "全局可用（存放在工作台技能库）", "Global (Saved in Workbench skill library)"],
   ["#newSkillScope option[value='workspace']", "仅当前空间（存放在项目 .agents/skills/）", "Current Workspace (.agents/skills/)"],
+  ["#newSkillCategory option[value='general']", "通用", "General"],
+  ["#newSkillCategory option[value='engineering']", "研发", "Engineering"],
+  ["#newSkillCategory option[value='research']", "调研学习", "Research"],
+  ["#newSkillCategory option[value='aigc']", "AIGC", "AIGC"],
   ["#skillCreateBox button[onclick*='toggleSkillCreateBox(false)']", "取消", "Cancel"],
   ["#skillCreateBox button[onclick*='submitCreateSkill']", "创建并启用", "Create & Enable"],
+  ["#skillUrlBoxTitle", "从 GitHub 导入 Skill（仅支持 HTTPS GitHub 链接，先审查正文再导入）", "Import Skill from GitHub (HTTPS GitHub URLs only — review full text before installing)"],
+  ["#btnPreviewSkillUrl", "预览审查", "Preview"],
   ["#skillImportBox .insp-card-title", "导入本地已有 Skill（支持 SKILL.md 文件或技能文件夹路径）", "Import Local Skill (Path to SKILL.md or skill folder)"],
   ["#btnPickSkillFolder", "浏览…", "Browse…"],
   ["#btnPickWsFolder", "浏览…", "Browse…"],
@@ -305,6 +339,11 @@ function applyLang(lang) {
   setLabelFor("newSkillName", "技能名称", "Skill Name");
   setPh("newSkillName", "例如：小红书爆款文案 / 漫剧分镜", "e.g. Storyboard Director / Strict Reviewer");
   setLabelFor("newSkillScope", "保存范围", "Save Scope");
+  setLabelFor("newSkillCategory", "技能分类", "Category");
+  setLabelFor("newSkillTags", "标签（逗号分隔，可选）", "Tags (comma-separated, optional)");
+  setPh("newSkillTags", "例如：review, security, python", "e.g. review, security, python");
+  setPh("skillSearchInput", "搜索技能名称、标签或用途...", "Search skills by name, tag, or description...");
+  setPh("importSkillUrl", "粘贴 GitHub 仓库、目录或 SKILL.md 链接，如 https://github.com/owner/repo/blob/main/SKILL.md", "Paste a GitHub repo, folder, or SKILL.md URL, e.g. https://github.com/owner/repo/blob/main/SKILL.md");
   setLabelFor("newSkillDesc", "一句话用途说明（展示给小白和 / 菜单）", "One-Line Description (Shown in list & / menu)");
   setPh("newSkillDesc", "例如：按爆款钩子+结构化分镜表输出 60 秒漫剧脚本", "e.g. Output 60s short-drama script with 3s hook & shot table");
   setLabelFor("newSkillBody", "具体执行规范（直接用大白话写清楚要求即可）", "Execution Instructions (Plain language rules)");
@@ -476,17 +515,55 @@ function setSkillFilter(f) {
   });
   renderSkillsPane();
 }
+function setSkillCategory(cat) {
+  currentSkillCategory = cat;
+  document.querySelectorAll("#skillCategoryBar button").forEach(b => {
+    b.classList.toggle("solid", b.dataset.sc === cat);
+  });
+  renderSkillsPane();
+}
+function onSkillSearch(val) {
+  currentSkillQuery = String(val || "").trim().toLowerCase();
+  renderSkillsPane();
+}
+function filterSkillByTag(tag) {
+  const inp = document.getElementById("skillSearchInput");
+  if (inp) inp.value = tag;
+  onSkillSearch(tag);
+}
 function toggleSkillCreateBox(force) {
   const el = document.getElementById("skillCreateBox");
   const show = force !== undefined ? force : el.style.display === "none";
   el.style.display = show ? "flex" : "none";
-  if (show) document.getElementById("skillImportBox").style.display = "none";
+  if (show) {
+    document.getElementById("skillImportBox").style.display = "none";
+    const urlBox = document.getElementById("skillUrlBox");
+    if (urlBox) urlBox.style.display = "none";
+  }
+}
+function toggleSkillUrlBox(force) {
+  const el = document.getElementById("skillUrlBox");
+  if (!el) return;
+  const show = force !== undefined ? force : el.style.display === "none";
+  el.style.display = show ? "flex" : "none";
+  if (show) {
+    document.getElementById("skillCreateBox").style.display = "none";
+    document.getElementById("skillImportBox").style.display = "none";
+  } else {
+    pendingRemoteSkillUrl = "";
+    const prev = document.getElementById("skillUrlPreview");
+    if (prev) { prev.style.display = "none"; prev.innerHTML = ""; }
+  }
 }
 function toggleSkillImportBox(force) {
   const el = document.getElementById("skillImportBox");
   const show = force !== undefined ? force : el.style.display === "none";
   el.style.display = show ? "flex" : "none";
-  if (show) document.getElementById("skillCreateBox").style.display = "none";
+  if (show) {
+    document.getElementById("skillCreateBox").style.display = "none";
+    const urlBox = document.getElementById("skillUrlBox");
+    if (urlBox) urlBox.style.display = "none";
+  }
 }
 
 function renderSkillsPane() {
@@ -494,31 +571,48 @@ function renderSkillsPane() {
   if (!box || !latestSnap) return;
   const list = latestSnap.skills || [];
   const filtered = list.filter(s => {
-    if (currentSkillFilter === "active") return s.active;
-    if (currentSkillFilter === "custom") return s.source === "user" || s.source === "workspace";
-    if (currentSkillFilter === "ext") return String(s.source || "").startsWith("ext-");
+    if (currentSkillFilter === "active" && !s.active) return false;
+    if (currentSkillFilter === "custom" && !(s.source === "user" || s.source === "workspace")) return false;
+    if (currentSkillFilter === "ext" && !String(s.source || "").startsWith("ext-")) return false;
+    const cat = String(s.category || "general").toLowerCase();
+    if (currentSkillCategory !== "all" && cat !== currentSkillCategory) return false;
+    if (currentSkillQuery) {
+      const hay = [
+        s.name, s.slug, s.description, fmtSkillDesc(s), s.category,
+        ...(Array.isArray(s.tags) ? s.tags : [])
+      ].join(" ").toLowerCase();
+      if (!hay.includes(currentSkillQuery)) return false;
+    }
     return true;
   });
 
   if (!filtered.length) {
-    box.innerHTML = `<div style="text-align:center;padding:28px 12px;color:var(--text-muted);font-size:12.5px;">${t("该分类下暂无技能。点上方「+ 新建技能」即可用大白话写一个！", "No skills in this category yet. Click '+ New Skill' above to create one in plain language.")}</div>`;
+    box.innerHTML = `<div style="text-align:center;padding:28px 12px;color:var(--text-muted);font-size:12.5px;">${t("没有匹配的技能。可切换筛选条件，或点上方「+ 新建技能 / 从 GitHub 导入」。", "No matching skills. Adjust filters or click '+ New Skill' / 'Import from GitHub' above.")}</div>`;
     return;
   }
 
-  box.innerHTML = filtered.map(s => `
+  box.innerHTML = filtered.map(s => {
+    const tags = Array.isArray(s.tags) ? s.tags.slice(0, 6) : [];
+    const tagsHtml = tags.length
+      ? `<div class="skill-tags">${tags.map(tg => `<span class="skill-tag" data-tag="${escapeHtml(tg)}" onclick="filterSkillByTag(this.dataset.tag)">#${escapeHtml(tg)}</span>`).join("")}</div>`
+      : "";
+    return `
     <div class="skill-card ${s.active ? 'active' : ''}">
       <div class="skill-top">
         <div style="min-width:0;flex:1;">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             <strong style="font-size:13px;">${escapeHtml(s.name)}</strong>
             <span class="skill-slug">/${escapeHtml(s.slug)}</span>
+            <span class="skill-cat">${escapeHtml(fmtSkillCategory(s.category))}</span>
             <span class="skill-src">${escapeHtml(fmtSkillSource(s.source_label))}</span>
           </div>
           <div style="font-size:12px;color:var(--text-sec);margin-top:4px;">${escapeHtml(fmtSkillDesc(s))}</div>
+          ${tagsHtml}
         </div>
         <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
           <button class="toggle-chip ${s.enabled_global ? 'on' : ''}" title="${t("在所有工作空间中自动生效", "Active across all workspaces")}" onclick="toggleSkill('${escapeHtml(s.id)}','global',${!s.enabled_global})">${t("全局", "Global")}</button>
           <button class="toggle-chip ${s.enabled_workspace ? 'on' : ''}" title="${t("仅在当前工作空间生效", "Active in current workspace only")}" onclick="toggleSkill('${escapeHtml(s.id)}','workspace',${!s.enabled_workspace})">${t("本空间", "Workspace")}</button>
+          <button class="ws-act-btn" title="${t("导出 SKILL.md 分享给伙伴", "Export SKILL.md")}" onclick="exportSkillById('${escapeHtml(s.id)}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
           ${s.editable ? `<button class="ws-act-btn del" title="${t("删除自定义技能", "Delete custom skill")}" onclick="deleteSkill('${escapeHtml(s.id)}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>` : ""}
         </div>
       </div>
@@ -526,7 +620,8 @@ function renderSkillsPane() {
         <summary style="cursor:pointer;user-select:none;">${t("查看规范正文", "View Skill Specification")}</summary>
         <pre style="margin:6px 0 0;padding:8px 10px;border-radius:8px;background:var(--bg-code);border:1px solid var(--border);white-space:pre-wrap;font-family:Consolas,monospace;color:var(--text-sec);max-height:150px;overflow-y:auto;">${escapeHtml(s.body)}</pre>
       </details>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 }
 
 async function toggleSkill(id, scope, enabled) {
@@ -534,7 +629,7 @@ async function toggleSkill(id, scope, enabled) {
     const res = await api("/api/skills", { action: "toggle", id, scope, enabled });
     render(res.snapshot, true);
     renderSkillsPane();
-    showToast(enabled ? `已启用技能（${scope === 'global' ? '全局' : '当前空间'}）` : "已关闭该技能");
+    showToast(enabled ? t(`已启用技能（${scope === 'global' ? '全局' : '当前空间'}）`, `Skill enabled (${scope})`) : t("已关闭该技能", "Skill disabled"));
   } catch (e) { showToast(e.message); }
 }
 
@@ -543,39 +638,121 @@ async function submitCreateSkill() {
   const description = document.getElementById("newSkillDesc").value.trim();
   const body = document.getElementById("newSkillBody").value.trim();
   const scope = document.getElementById("newSkillScope").value;
-  if (!name || !body) { showToast("请填写技能名称和具体规范内容"); return; }
+  const category = (document.getElementById("newSkillCategory")?.value || "general").trim();
+  const tags = (document.getElementById("newSkillTags")?.value || "").trim();
+  if (!name || !body) { showToast(t("请填写技能名称和具体规范内容", "Please enter a skill name and instructions")); return; }
   try {
-    const res = await api("/api/skills", { action: "create", name, description, body, scope });
+    const res = await api("/api/skills", { action: "create", name, description, body, scope, category, tags });
     document.getElementById("newSkillName").value = "";
     document.getElementById("newSkillDesc").value = "";
     document.getElementById("newSkillBody").value = "";
+    if (document.getElementById("newSkillTags")) document.getElementById("newSkillTags").value = "";
     toggleSkillCreateBox(false);
     render(res.snapshot, true);
     renderSkillsPane();
-    showToast(`已创建并启用技能：${name}`);
+    showToast(t(`已创建并启用技能：${name}`, `Created & enabled skill: ${name}`));
+  } catch (e) { showToast(e.message); }
+}
+
+async function previewRemoteSkill() {
+  const url = (document.getElementById("importSkillUrl")?.value || "").trim();
+  const btn = document.getElementById("btnPreviewSkillUrl");
+  const prev = document.getElementById("skillUrlPreview");
+  if (!url) { showToast(t("请粘贴 GitHub 链接", "Please paste a GitHub URL")); return; }
+  if (btn) btn.disabled = true;
+  try {
+    const res = await api("/api/skills", { action: "preview_url", url });
+    const sk = res.skill || {};
+    pendingRemoteSkillUrl = sk.resolved_url || url;
+    const tags = Array.isArray(sk.tags) ? sk.tags : [];
+    const kb = sk.byte_size != null ? `${(sk.byte_size / 1024).toFixed(1)} KB` : "";
+    prev.innerHTML = `
+      <div class="skill-preview-warn">
+        <strong>${t("导入前安全审查", "Security Review Before Install")}</strong>：${t("Skill 正文会直接注入 AI 提示词，请确认下方规则无恶意指令后再导入（仅导入纯文本 SKILL.md，不执行任何脚本）。", "Skill text is injected directly into AI prompts. Review the full specification below before installing (plain-text SKILL.md only; no scripts are executed).")}
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;">
+        <strong>${escapeHtml(sk.name || "")}</strong>
+        <span class="skill-cat">${escapeHtml(fmtSkillCategory(sk.category))}</span>
+        ${kb ? `<span class="skill-src">${escapeHtml(kb)}</span>` : ""}
+        ${tags.map(tg => `<span class="skill-tag">#${escapeHtml(tg)}</span>`).join("")}
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);word-break:break-all;">${t("最终下载地址", "Resolved URL")}: ${escapeHtml(pendingRemoteSkillUrl)}</div>
+      <pre style="margin:0;padding:8px 10px;border-radius:8px;background:var(--bg-code);border:1px solid var(--border);white-space:pre-wrap;font-family:Consolas,monospace;font-size:11.5px;color:var(--text-sec);max-height:200px;overflow-y:auto;">${escapeHtml(sk.body || "")}</pre>
+      <div style="display:flex;justify-content:flex-end;gap:6px;">
+        <button class="btn sm" onclick="toggleSkillUrlBox(false)">${t("取消", "Cancel")}</button>
+        <button class="btn sm solid" id="btnConfirmImportUrl" onclick="confirmImportRemoteSkill()">${t("确认导入并启用", "Confirm & Install")}</button>
+      </div>`;
+    prev.style.display = "flex";
+  } catch (e) {
+    pendingRemoteSkillUrl = "";
+    if (prev) { prev.style.display = "none"; prev.innerHTML = ""; }
+    showToast(e.message);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function confirmImportRemoteSkill() {
+  const url = pendingRemoteSkillUrl || (document.getElementById("importSkillUrl")?.value || "").trim();
+  const btn = document.getElementById("btnConfirmImportUrl");
+  if (!url) return;
+  if (btn) btn.disabled = true;
+  try {
+    const res = await api("/api/skills", { action: "import_url", url });
+    if (document.getElementById("importSkillUrl")) document.getElementById("importSkillUrl").value = "";
+    toggleSkillUrlBox(false);
+    render(res.snapshot, true);
+    renderSkillsPane();
+    showToast(t(`已导入并启用远程技能：${res.skill?.name || ""}`, `Imported remote skill: ${res.skill?.name || ""}`));
+  } catch (e) {
+    showToast(e.message);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function exportSkillById(id) {
+  try {
+    const res = await api("/api/skills", { action: "export", id });
+    const sk = res.skill || {};
+    const content = sk.content || "";
+    const dlName = `${sk.slug || "skill"}-SKILL.md`;
+    const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = dlName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(content).catch(() => {});
+    }
+    showToast(t(`已导出 ${dlName}（并已复制到剪贴板）`, `Exported ${dlName} (copied to clipboard)`));
   } catch (e) { showToast(e.message); }
 }
 
 async function submitImportSkill() {
   const source_path = document.getElementById("importSkillPath").value.trim();
-  if (!source_path) { showToast("请粘贴本地 SKILL.md 或技能文件夹路径"); return; }
+  if (!source_path) { showToast(t("请粘贴本地 SKILL.md 或技能文件夹路径", "Please paste a local SKILL.md or skill folder path")); return; }
   try {
     const res = await api("/api/skills", { action: "import", source_path });
     document.getElementById("importSkillPath").value = "";
     toggleSkillImportBox(false);
     render(res.snapshot, true);
     renderSkillsPane();
-    showToast("导入成功，已自动全局启用");
+    showToast(t("导入成功，已自动全局启用", "Imported and enabled globally"));
   } catch (e) { showToast(e.message); }
 }
 
 async function deleteSkill(id) {
-  if (!confirm("确定删除该自定义技能？（不会影响内置技能）")) return;
+  if (!confirm(t("确定删除该自定义技能？（不会影响内置技能）", "Delete this custom skill? (Built-in skills are unaffected)"))) return;
   try {
     const res = await api("/api/skills", { action: "delete", id });
     render(res.snapshot, true);
     renderSkillsPane();
-    showToast("已删除技能");
+    showToast(t("已删除技能", "Skill deleted"));
   } catch (e) { showToast(e.message); }
 }
 
