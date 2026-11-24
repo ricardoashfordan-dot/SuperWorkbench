@@ -1,6 +1,8 @@
 ---
 name: aigc-storyboard
 description: 将模糊创意或小说章节拆解为结构化 AIGC 漫剧/短片分镜表（含前3秒强钩子、景别运镜与角色一致性锚点 Prompt）
+category: aigc
+tags: [storyboard, video, visual-consistency]
 ---
 
 # AIGC 漫剧与概念短片分镜导演规范

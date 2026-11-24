@@ -1,3 +1,4 @@
+import io
 import json
 import os
 import re
@@ -5,11 +6,17 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
+from email.message import Message
+from hashlib import sha256
 from pathlib import Path
 from unittest import mock
 from unittest.mock import Mock, patch
+from urllib.request import HTTPHandler, HTTPSHandler
+from urllib.response import addinfourl
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKBENCH_DIR = REPO_ROOT / "workbench"
@@ -31,6 +38,260 @@ import threads      # noqa: E402
 
 def tearDownModule():
     shutil.rmtree(_TEST_TMP_DIR, ignore_errors=True)
+
+
+class SkillEcosystemTests(unittest.TestCase):
+    base_url = "https://raw.githubusercontent.com/example/skills/main/SKILL.md"
+    raw = (
+        '---\nname: remote-review\ndescription: "Readability: check defaults"\n'
+        "category: engineering\ntags: [review, docs]\n---\n\n# Review\nRecord the evidence.\n"
+    ).encode("utf-8")
+
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.root = Path(scratch.name).resolve()
+        self.workspace = self.root / "project"
+        self.workspace.mkdir()
+        self.home = self.root / "home"
+        self.library = self.root / "library"
+        self.settings = self.root / "skills_state.json"
+        self.ws_id = "test-project"
+        self.requests = []
+        patches = ExitStack()
+        self.addCleanup(patches.close)
+        patches.enter_context(patch.multiple(config, USER_SKILLS_DIR=self.library, SKILLS_STATE_PATH=self.settings))
+        patches.enter_context(patch.object(Path, "home", return_value=self.home))
+        patches.enter_context(patch.object(HTTPHandler, "http_open", side_effect=AssertionError("HTTP must not open")))
+
+    def _mock_github(self, routes):
+        def open_https(_handler, request):
+            self.requests.append(request.full_url)
+            status, headers, body = routes[request.full_url]
+            response_headers = Message()
+            for key, value in headers.items():
+                response_headers[key] = value
+            response = addinfourl(io.BytesIO(body), response_headers, request.full_url, status)
+            response.msg = "Mock GitHub"
+            return response
+
+        return patch.object(HTTPSHandler, "https_open", autospec=True, side_effect=open_https)
+
+    def test_discovery_metadata_and_read_only_local_engines(self):
+        expected = {
+            "aigc-storyboard": "aigc", "code-review-strict": "engineering", "git-commit-release": "engineering",
+            "security-audit": "engineering", "bug-triage": "engineering", "doc-writer": "engineering",
+            "deep-research": "research", "paper-study": "research",
+        }
+        for directory, body in (
+            (self.home / ".gemini" / "skills" / "legacy", "# Legacy\nA Markdown body."),
+            (self.home / ".dsh" / "skills" / "notes", "---\nname: notes\ntags: one, two\n---\n\n# Notes"),
+        ):
+            directory.mkdir(parents=True)
+            (directory / "SKILL.md").write_text(body, encoding="utf-8")
+        items = skills.list_skills(self.ws_id, self.workspace)
+        builtin = {item["slug"]: item for item in items if item["source"] == "builtin"}
+        self.assertEqual({name: item["category"] for name, item in builtin.items()}, expected)
+        self.assertTrue(all(item["tags"] for item in builtin.values()))
+        for name in ("security-audit", "bug-triage", "doc-writer", "deep-research", "paper-study"):
+            line_count = len(Path(builtin[name]["path"]).read_text(encoding="utf-8").splitlines())
+            self.assertIn(line_count, range(40, 81))
+        by_id = {item["id"]: item for item in items}
+        self.assertEqual(by_id["ext-gemini:legacy"]["category"], "general")
+        self.assertEqual(by_id["ext-gemini:legacy"]["tags"], [])
+        self.assertEqual(by_id["ext-dsh:notes"]["tags"], ["one", "two"])
+        for skill_id in ("ext-gemini:legacy", "ext-dsh:notes"):
+            self.assertFalse(by_id[skill_id]["editable"])
+            self.assertFalse(skills.delete_skill(skill_id, self.ws_id, self.workspace))
+        self.assertFalse(self.library.exists())
+
+    def test_remote_preview_and_install_rewrite_github_urls(self):
+        github = "https://github.com/example/skills/blob/main/SKILL.md#L1"
+        root = "https://raw.githubusercontent.com/example/skills/HEAD/SKILL.md"
+        directory = "https://raw.githubusercontent.com/example/skills/v1/packs/review/SKILL.md"
+        routes = {url: (200, {}, self.raw) for url in (self.base_url, root, directory)}
+        with self._mock_github(routes):
+            preview = skills.preview_remote_skill(github)
+            self.assertEqual(preview, {
+                "name": "remote-review", "description": "Readability: check defaults",
+                "category": "engineering", "tags": ["review", "docs"],
+                "body": "# Review\nRecord the evidence.", "resolved_url": self.base_url, "byte_size": len(self.raw),
+            })
+            self.assertEqual(skills.preview_remote_skill("https://github.com/example/skills")["resolved_url"], root)
+            self.assertEqual(
+                skills.preview_remote_skill("https://github.com/example/skills/tree/v1/packs/review/")["resolved_url"],
+                directory,
+            )
+            self.assertFalse(self.library.exists())
+            self.assertFalse(self.settings.exists())
+            installed = skills.install_remote_skill(github, self.ws_id)
+
+        self.assertEqual(self.requests, [self.base_url, root, directory, self.base_url])
+        self.assertEqual(installed["resolved_url"], self.base_url)
+        self.assertEqual(installed["name"], preview["name"])
+        self.assertEqual(Path(installed["path"]), self.library / "remote-review" / "SKILL.md")
+        self.assertEqual(skills._parse_skill_md(Path(installed["path"]))["tags"], ["review", "docs"])
+        self.assertIn(installed["id"], skills.load_skills_state()["global_enabled"])
+
+    def test_remote_rejects_disallowed_urls_and_redirects(self):
+        with self._mock_github({}) as open_https:
+            for url in (
+                "http://github.com/example/skills",
+                "https://example.org/review/SKILL.md",
+                "https://github.com.example.org/example/skills",
+                "https://github.com@example.org/example/skills",
+                "https://raw.githubusercontent.com:444/example/skills/main/SKILL.md",
+            ):
+                with self.subTest(url=url), self.assertRaisesRegex(ValueError, "HTTPS"):
+                    skills.preview_remote_skill(url)
+            open_https.assert_not_called()
+
+        for target in ("http://127.0.0.1/SKILL.md", "https://127.0.0.1/SKILL.md", "https://example.org/SKILL.md"):
+            with self.subTest(target=target):
+                self.requests.clear()
+                with self._mock_github({self.base_url: (302, {"Location": target}, b"")}), self.assertRaises(ValueError):
+                    skills.install_remote_skill(self.base_url, self.ws_id)
+                self.assertEqual(self.requests, [self.base_url])
+        self.assertFalse(self.library.exists())
+        self.assertFalse(self.settings.exists())
+
+    def test_remote_redirect_count_and_stream_size(self):
+        urls = [f"{self.base_url}?step={n}" for n in range(5)]
+        routes = {url: (302, {"Location": urls[n + 1]}, b"") for n, url in enumerate(urls[:-1])}
+        with self._mock_github(routes), self.assertRaisesRegex(ValueError, "3 次"):
+            skills.preview_remote_skill(urls[0])
+        self.assertEqual(self.requests, urls[:4])
+        routes[urls[3]] = (200, {}, b"a" * skills.MAX_SKILL_BYTES)
+        with self._mock_github(routes):
+            preview = skills.preview_remote_skill(urls[0])
+            self.assertEqual(preview["resolved_url"], urls[3])
+            self.assertEqual(preview["byte_size"], skills.MAX_SKILL_BYTES)
+        routes[urls[3]] = (200, {}, b"a" * (skills.MAX_SKILL_BYTES + 1))
+        with self._mock_github(routes), self.assertRaisesRegex(ValueError, "128 KB"):
+            skills.install_remote_skill(urls[0], self.ws_id)
+        self.assertFalse(self.library.exists())
+
+    def test_remote_has_an_overall_deadline(self):
+        allow_response = threading.Event()
+        completed = threading.Event()
+
+        def blocked_http(*_args):
+            try:
+                allow_response.wait(2)
+                raise OSError("Mock request finished")
+            finally:
+                completed.set()
+
+        with (
+            patch.object(HTTPSHandler, "https_open", side_effect=blocked_http),
+            patch.object(skills, "REMOTE_TIMEOUT_SECONDS", 0.1),
+        ):
+            try:
+                with self.assertRaisesRegex(ValueError, "超时"):
+                    skills.preview_remote_skill(self.base_url)
+                self.assertFalse(completed.is_set())
+            finally:
+                allow_response.set()
+        self.assertTrue(completed.wait(2))
+        self.assertFalse(self.library.exists())
+
+    def test_local_import_copies_only_validated_text_and_exports(self):
+        source = self.root / "local-pack"
+        source.mkdir()
+        content = b"---\r\nname: ../../escaped\\review\r\ntags: quality, review\r\n---\r\n\r\n# Local\r\n"
+        (source / "SKILL.md").write_bytes(content)
+        (source / "helper.py").write_text("# A bundled module\n", encoding="utf-8")
+        result = skills.import_local_skill(str(source), self.ws_id)
+        target = Path(result["path"])
+        self.assertEqual(result["slug"], "escaped-review")
+        self.assertTrue(target.resolve().is_relative_to(self.library))
+        self.assertEqual(list(target.parent.iterdir()), [target])
+        self.assertEqual(target.read_bytes(), content)
+        exported = skills.export_skill(result["id"], self.ws_id, self.workspace)
+        self.assertEqual(exported["filename"], "SKILL.md")
+        metadata = skills._parse_skill_text(exported["content"], "unused")
+        self.assertEqual(metadata["category"], "general")
+        self.assertEqual(metadata["tags"], ["quality", "review"])
+        self.assertEqual(metadata["body"], "# Local")
+
+        filename = source / "other.md"
+        filename.write_bytes(b"x" * (skills.MAX_SKILL_BYTES + 1))
+        with self.assertRaisesRegex(ValueError, "128 KB"):
+            skills.import_local_skill(str(filename), self.ws_id)
+        with self.assertRaises(ValueError):
+            skills._safe_slug("")
+        self.assertEqual(
+            skills._safe_slug("中文技能"),
+            f"skill-{sha256('中文技能'.encode('utf-8')).hexdigest()[:12]}",
+        )
+
+    def test_local_and_destination_links_cannot_escape(self):
+        external = self.root / "outside"
+        external.mkdir()
+        sentinel = external / "SKILL.md"
+        sentinel.write_bytes(self.raw)
+        self.library.mkdir()
+
+        def link_directory(link):
+            try:
+                link.symlink_to(external, target_is_directory=True)
+            except OSError:
+                if os.name != "nt":
+                    raise
+                # NTFS junctions cover the same resolved-path boundary without Developer Mode.
+                result = subprocess.run(
+                    ["cmd.exe", "/d", "/c", "mklink", "/J", str(link), str(external)],
+                    capture_output=True, creationflags=config.NO_WINDOW_FLAGS, timeout=5,
+                )
+                self.assertEqual(result.returncode, 0, "Could not create a directory junction for the test")
+
+        source = self.root / "source"
+        source.mkdir()
+        selected = source
+        try:
+            (source / "SKILL.md").symlink_to(sentinel)
+        except OSError:
+            if os.name != "nt":
+                raise
+            selected = self.root / "linked-source"
+            link_directory(selected)
+        link_directory(self.library / "remote-review")
+        link_directory(self.workspace / ".agents")
+        with self.assertRaisesRegex(ValueError, "符号链接"):
+            skills.import_local_skill(str(selected), self.ws_id)
+        with self.assertRaisesRegex(ValueError, "符号链接"):
+            skills.import_local_skill(str(sentinel), self.ws_id)
+        with self.assertRaisesRegex(ValueError, "符号链接"):
+            skills.create_skill("new", "", "# New", "workspace", self.workspace, self.ws_id)
+        self.assertEqual(sentinel.read_bytes(), self.raw)
+        self.assertFalse(self.settings.exists())
+
+    def test_new_skill_actions_use_existing_api_envelope(self):
+        handler = server.WorkbenchHandler.__new__(server.WorkbenchHandler)
+        handler.path = "/api/skills"
+        handler._validate_host_and_origin = Mock(return_value=True)
+        handler._authorize = Mock(return_value=True)
+        handler._read_body = Mock(side_effect=[
+            {"action": "preview_url", "url": self.base_url},
+            {"action": "import_url", "url": self.base_url},
+            {"action": "export", "id": "user:remote-review"},
+        ])
+        handler._send_json = Mock()
+        workspace = {"id": self.ws_id, "path": str(self.workspace)}
+        with (
+            patch.object(config, "get_active_workspace", return_value=workspace),
+            patch.object(server, "build_snapshot", return_value={"skills": []}) as snapshot,
+            self._mock_github({self.base_url: (200, {}, self.raw)}),
+        ):
+            handler.do_POST()
+            self.assertEqual(set(handler._send_json.call_args.args[0]), {"ok", "skill"})
+            snapshot.assert_not_called()
+            self.assertFalse(self.library.exists())
+            handler.do_POST()
+            self.assertIn("snapshot", handler._send_json.call_args.args[0])
+            handler.do_POST()
+            self.assertEqual(handler._send_json.call_args.args[0]["skill"]["filename"], "SKILL.md")
+            snapshot.assert_called_once()
 
 
 class ConversationTestSuite(unittest.TestCase):

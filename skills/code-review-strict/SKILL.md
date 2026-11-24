@@ -1,6 +1,8 @@
 ---
 name: code-review-strict
 description: 证据绑定的严苛代码审计与重构检查清单（精准定位边界 Bug、竞态条件、性能瓶颈与安全隐患）
+category: engineering
+tags: [review, correctness, maintainability]
 ---
 
 # 证据绑定代码审计规范（Evidence-Bound Review）

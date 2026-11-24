@@ -1,6 +1,8 @@
 ---
 name: git-commit-release
 description: 自动整理清晰规范的 Git Commit 信息、中英文 Changelog 与 GitHub Release 发布说明
+category: engineering
+tags: [git, release, changelog]
 ---
 
 # 规范化 Git 提交与开源发布说明规范
