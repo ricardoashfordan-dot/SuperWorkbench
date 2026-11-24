@@ -140,7 +140,7 @@ def msg_thread_id(msg: dict) -> str:
 
 
 def _matches_history(msg: dict, ws_id: str, thread_id: str | None) -> bool:
-    return msg.get("workspace_id", "super-workbench") == ws_id and (
+    return msg.get("workspace_id") == ws_id and (
         thread_id is None or msg_thread_id(msg) == thread_id
     )
 
