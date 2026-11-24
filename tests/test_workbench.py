@@ -177,14 +177,16 @@ class SkillEcosystemTests(unittest.TestCase):
 
         def blocked_http(*_args):
             try:
-                allow_response.wait(2)
+                allow_response.wait(3)
                 raise OSError("Mock request finished")
             finally:
                 completed.set()
 
+        # Pre-warm opener/SSL handler setup so cold Windows CA loading does not consume the short test deadline.
+        skills.build_opener(skills.ProxyHandler({}))
         with (
             patch.object(HTTPSHandler, "https_open", side_effect=blocked_http),
-            patch.object(skills, "REMOTE_TIMEOUT_SECONDS", 0.25),
+            patch.object(skills, "REMOTE_TIMEOUT_SECONDS", 0.5),
         ):
             try:
                 with self.assertRaisesRegex(ValueError, "超时"):
