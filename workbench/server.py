@@ -239,7 +239,10 @@ def _on_job_event(
         "xiu": "WAITING_HUMAN",
     }
     state["edit_lock"] = lock_owner
-    state["stage"] = stage_map.get(lock_owner, state.get("stage", "IDLE"))
+    if adapters.is_custom_role_id(lock_owner):
+        state["stage"] = "RUNNING_ROLE"
+    else:
+        state["stage"] = stage_map.get(lock_owner, state.get("stage", "IDLE"))
     state["updated_at"] = config.now_iso()
     config.write_json(config.STATE_PATH, state)
     append_message(
@@ -626,27 +629,42 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 if action == "apply_scene":
                     result = adapters.recommend_workspace_roster(data.get("scene"), ws_id)
                     adapters.save_role_bindings(result["roles"], ws_id, scene=result["scene"])
+                    result.update(adapters.get_workspace_roster(ws_id))
                 elif action == "reset_workspace":
-                    result = {"roles": adapters.reset_workspace_roles(ws_id)}
+                    adapters.reset_workspace_roles(ws_id)
+                    result = adapters.get_workspace_roster(ws_id)
                 elif action == "import_preset":
                     result = adapters.import_roster_preset(data.get("preset"), ws_id)
-                elif action == "save":
+                elif action in ("save", "add_role", "delete_role", "reorder_roles"):
                     scope = data.get("scope", "workspace")
                     if scope not in ("workspace", "global"):
                         raise ValueError("阵容保存范围必须是 workspace 或 global")
                     target_ws_id = ws_id if scope == "workspace" else None
-                    payload = data.get("roles") if isinstance(data.get("roles"), dict) else data
-                    updates = {}
-                    for slot in adapters.ROLE_SLOTS:
-                        fields = payload.get(slot)
-                        if isinstance(fields, dict):
-                            updates[slot] = {
-                                key: str(fields[key]).strip()[:limit]
-                                for key, limit in adapters.ROLE_FIELD_LIMITS.items()
-                                if fields.get(key) is not None
-                            }
-                    adapters.save_role_bindings(updates, target_ws_id)
-                    result = {"roles": adapters.load_role_bindings(target_ws_id)}
+                    if action == "add_role":
+                        role = adapters.add_custom_role(
+                            target_ws_id, label=data.get("label"), engine=data.get("engine", ""),
+                            model=data.get("model", ""), effort=data.get("effort", "high"),
+                            system_prompt=data.get("system_prompt", ""), insert_before=data.get("insert_before", "reviewer"),
+                        )
+                        result = {**adapters.get_workspace_roster(target_ws_id), "role": role}
+                    elif action == "delete_role":
+                        result = adapters.delete_custom_role(target_ws_id, data.get("role_id"))
+                    elif action == "reorder_roles":
+                        result = adapters.reorder_roles(target_ws_id, data.get("order"))
+                    else:
+                        payload = data.get("roles") if isinstance(data.get("roles"), dict) else data
+                        updates = {}
+                        for slot, fields in payload.items():
+                            if (slot in adapters.ROLE_SLOTS or adapters.is_custom_role_id(slot)) and isinstance(fields, dict):
+                                updates[slot] = {
+                                    key: str(fields[key]).strip()[:limit]
+                                    for key, limit in adapters.ROLE_FIELD_LIMITS.items()
+                                    if fields.get(key) is not None
+                                }
+                                if "enabled" in fields:
+                                    updates[slot]["enabled"] = fields["enabled"]
+                        adapters.save_role_bindings(updates, target_ws_id)
+                        result = adapters.get_workspace_roster(target_ws_id)
                 else:
                     raise ValueError("未知的阵容操作")
             except ValueError as exc:
@@ -819,8 +837,8 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             self._send_json({"ok": True, "attachment": att})
             return
 
-        if parsed.path == "/api/dispatch":
-            target = str(data.get("target", "codex"))
+        if parsed.path in ("/api/dispatch", "/api/send"):
+            target = str(data.get("target", data.get("role_id", "codex")))
             text = str(data.get("instruction", "")).strip()
             auto_run = bool(data.get("auto_run", True))
             skill_ids = data.get("skill_ids") if isinstance(data.get("skill_ids"), list) else []
@@ -830,6 +848,14 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 return
             if not text and attachments:
                 text = "请结合我附带的图片/附件进行分析与处理。"
+            ws_id = active_ws.get("id", "super-workbench")
+            is_pipe = target == "pipeline"
+            try:
+                slot = runner.resolve_role_target(target, ws_id, pipeline=is_pipe)
+            except ValueError as exc:
+                self._send_json({"ok": False, "error": str(exc)}, 400)
+                return
+            first_agent = runner.SLOT_TO_NODE.get(slot, slot)
             r = int(state.get("current_round", 1))
             if target in ("codex", "pipeline") and len(text) >= 160:
                 md = f"# 给 Codex 的最新指令 · [{active_ws.get('name')}]\n\n{text}\n"
@@ -838,10 +864,7 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 config.NEXT_FOR_DSH_PATH.write_text(f"# 给 DSH 的质检指令\n\n{text}\n", encoding="utf-8")
 
             if auto_run:
-                ws_id = active_ws.get("id", "super-workbench")
                 active_thread, _ = threads.ensure_workspace_thread(ws_id)
-                is_pipe = target == "pipeline"
-                first_agent = "agy" if is_pipe else target
                 ok, reason = runner.JOB_MANAGER.start_job(
                     first_agent,
                     text,
@@ -858,11 +881,11 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 self._send_json({"ok": True, "started_cli": first_agent, "pipeline": is_pipe, "snapshot": build_snapshot()})
                 return
 
-            state["edit_lock"] = "agy" if target == "pipeline" else target
+            state["edit_lock"] = first_agent
             state["updated_at"] = config.now_iso()
             config.write_json(config.STATE_PATH, state)
             uname = config.load_app_settings().get("user_name", "我")
-            msg = append_message("xiu", state["edit_lock"], "TASK", f"{uname}下达任务 → {target.upper()}", text, round_num=r)
+            msg = append_message("xiu", first_agent, "TASK", f"{uname}下达任务 → {target.upper()}", text, round_num=r, workspace_id=ws_id)
             self._send_json({"ok": True, "message": msg, "snapshot": build_snapshot()})
             return
 

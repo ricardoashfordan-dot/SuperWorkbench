@@ -475,9 +475,9 @@ class WorkspaceRosterTests(unittest.TestCase):
         self.active = {"id": "a", "name": "Workspace A", "type": "general", "path": str(self.root)}
         patches.enter_context(patch.object(config, "get_active_workspace", side_effect=lambda: self.active))
 
-    def _post(self, payload, expected_status=200):
+    def _post(self, payload, expected_status=200, *, path="/api/roles"):
         handler = server.WorkbenchHandler.__new__(server.WorkbenchHandler)
-        handler.path = "/api/roles"
+        handler.path = path
         handler._validate_host_and_origin = Mock(return_value=True)
         handler._authorize = Mock(return_value=True)
         handler._read_body = Mock(return_value=payload)
@@ -625,6 +625,198 @@ class WorkspaceRosterTests(unittest.TestCase):
         template = next(item for item in mcp_manager.load_mcp_registry()["templates"] if item["id"] == "blender")
         self.assertEqual((template["title"], template["transport"], template["command"], template["args"]),
                          ("Blender 3D 建模桥接", "stdio", "uvx", ["blender-mcp"]))
+
+
+    def test_dynamic_role_crud_order_and_workspace_structure_isolation(self):
+        inherited = self._post({"action": "add_role", "scope": "global", "label": "Shared Expert"})["role"]
+        custom = self._post({"action": "add_role", "label": "  .. 产品 / 设计  "})["role"]
+        self.assertRegex(custom["id"], r"^role-[a-z0-9][a-z0-9_-]*$")
+        self.assertFalse(custom["builtin"])
+        self.assertEqual(custom["order"], 3)
+        self.assertTrue(all(adapters.load_role_bindings("a")[slot]["builtin"] for slot in adapters.ROLE_SLOTS))
+        self._post({"roles": {custom["id"]: {"custom_label": "Mine", "system_prompt": "Stay focused"}}})
+        self.assertEqual(adapters.load_role_bindings("a")[custom["id"]]["custom_label"], "Mine")
+        self.assertNotIn(custom["id"], adapters.load_role_bindings("b"))
+
+        ordered = ["reviewer", custom["id"], "planner", inherited["id"], "builder"]
+        result = self._post({"action": "reorder_roles", "order": ordered})
+        self.assertEqual([item["id"] for item in result["snapshot"]["roster"]], ordered)
+        for invalid in (ordered[:-1], ordered[:-1] + ["planner"], ordered[:-1] + ["role-unknown"], None):
+            self._post({"action": "reorder_roles", "order": invalid}, 400)
+        self._post({"action": "delete_role", "role_id": "reviewer"}, 400)
+        self._post({"action": "delete_role", "role_id": "role-unknown"}, 400)
+        self._post({"action": "delete_role", "role_id": inherited["id"]})
+        self.assertNotIn(inherited["id"], adapters.load_role_bindings("a"))
+        self.assertIn(inherited["id"], adapters.load_role_bindings("b"))
+
+        for index in range(4):
+            self._post({"action": "add_role", "label": f"Expert {index}", "insert_before": None})
+        self.assertEqual(len(adapters.load_role_bindings("a")), 8)
+        self._post({"action": "add_role", "label": "Overflow"}, 400)
+        for invalid in ({"label": ""}, {"label": "x" * 25}, {"label": "Valid", "system_prompt": "a\0b"},
+                        {"label": "Valid", "system_prompt": "x" * 2001}):
+            self._post({"action": "add_role", **invalid}, 400)
+        self._post({"action": "reset_workspace"})
+        self.assertEqual(adapters.get_workspace_roster("a"), adapters.get_workspace_roster("b"))
+
+    def test_dynamic_portable_presets_keep_builtins_and_replace_workspace_structure(self):
+        engine = self._add_api_engine("Preset API", "gpt-test")
+        v1 = self._post({"action": "export_preset"})["preset"]
+        self.assertEqual(v1["version"], 1)
+        artist = adapters.add_custom_role("a", label="Artist", engine=engine, system_prompt="Check the materials")
+        adapters.save_role_bindings({"planner": {"enabled": False}}, "a")
+        order = [artist["id"], "reviewer", "builder"]
+        adapters.reorder_roles("a", order)
+        v2 = self._post({"action": "export_preset"})["preset"]
+        self.assertEqual(v2["version"], 2)
+        self.assertEqual(v2["roster_order"], order)
+        self.assertFalse(v2["roles"]["planner"]["enabled"])
+        self.active = {**self.active, "id": "b"}
+        imported = self._post({"action": "import_preset", "preset": json.loads(json.dumps(v2))})
+        self.assertEqual(imported["roles"], adapters.load_role_bindings("a"))
+        self.assertEqual(self._post({"action": "export_preset"})["preset"], v2)
+
+        invalid_id = {**v2, "roles": {**v2["roles"], "role-../x": {"label": "Invalid"}}}
+        oversized = {**v2, "roles": {**v2["roles"], **{f"role-extra-{i}": {"label": "Extra"} for i in range(5)}}}
+        bad_order = {**v2, "roster_order": [artist["id"], "reviewer", "reviewer"]}
+        wrong_type = {**v2, "roles": {**v2["roles"], "planner": {"enabled": "false"}}}
+        for invalid in (invalid_id, oversized, bad_order, wrong_type):
+            previous = config.ROLES_PATH.read_bytes()
+            self._post({"action": "import_preset", "preset": invalid}, 400)
+            self.assertEqual(config.ROLES_PATH.read_bytes(), previous)
+
+        v2["roles"][artist["id"]].update(engine="not-installed", model="foreign")
+        fallback = self._post({"action": "import_preset", "preset": v2})["roles"][artist["id"]]
+        self.assertEqual((fallback["engine"], fallback["model"]), (engine, "gpt-test"))
+        self._post({"action": "import_preset", "preset": v1})
+        self.assertEqual(adapters.get_workspace_roster("b")["roster_order"], list(adapters.ROLE_SLOTS))
+        self.assertNotIn(artist["id"], adapters.load_role_bindings("b"))
+        self.assertFalse(config.SKILLS_STATE_PATH.exists())
+
+    def test_custom_role_send_uses_persona_and_adds_reply_to_next_turn_history(self):
+        engine = self._add_api_engine("Local API", "gpt-test")
+        role = adapters.add_custom_role("a", label="Specialist", engine=engine, model="special-model",
+                                        system_prompt="Dedicated specialist persona")
+        tid = threads.ensure_workspace_thread("a")[0]["id"]
+        server.append_message("xiu", "agy", "TASK", "Earlier", "Previous constraint", workspace_id="a", thread_id=tid)
+        job = runner.JobManager()
+
+        def inline_thread(*, target, args=(), daemon):
+            return Mock(start=lambda: target(*args))
+
+        with (
+            patch.object(runner, "JOB_MANAGER", job),
+            patch.object(runner.threading, "Thread", side_effect=inline_thread),
+            patch.object(adapters, "stream_openai_compat", side_effect=[(0, "First specialist reply"), (0, "Second reply")]) as api,
+        ):
+            self._post({"role_id": role["id"], "instruction": "First request"}, path="/api/send")
+            self._post({"target": role["id"], "instruction": "Follow-up request"}, path="/api/dispatch")
+            self.active = {**self.active, "id": "b"}
+            self._post({"target": role["id"], "instruction": "Wrong space"}, 400, path="/api/dispatch")
+        self.assertEqual(api.call_count, 2)
+        for call in api.call_args_list:
+            self.assertEqual(call.kwargs["model"], "special-model")
+            self.assertEqual(call.kwargs["system_prompt"], "Dedicated specialist persona")
+            self.assertIn("Previous constraint", call.kwargs["user_prompt"])
+        follow_up = api.call_args_list[1].kwargs["user_prompt"]
+        self.assertIn("First specialist reply", follow_up)
+        self.assertEqual(follow_up.count("Follow-up request"), 1)
+        replies = [row for row in threads.load_thread_messages("a", tid) if row["type"] == "DONE_SINGLE"]
+        self.assertEqual([row["from"] for row in replies], [role["id"], role["id"]])
+        self.assertEqual(job.status_dict()["slot"], role["id"])
+
+    def test_four_role_pipeline_handoff_failure_abort_and_approval_snapshot(self):
+        engine = self._add_api_engine("Pipeline engine", "gpt-test")
+        specialist = adapters.add_custom_role("a", label="Security", engine=engine)["id"]
+        order = ["planner", "builder", specialist, "reviewer"]
+        for mode in ("automatic", "failed", "exception", "aborted", "approval"):
+            with self.subTest(mode=mode):
+                adapters.reorder_roles("a", order)
+                tid = f"thread-{mode}"
+                server.append_message("xiu", "agy", "TASK", "Earlier", "Start with the prior constraints",
+                                      workspace_id="a", thread_id=tid)
+                job = runner.JobManager()
+                events = Mock()
+
+                def run(slot, *_args, **_kwargs):
+                    if slot == specialist:
+                        if mode == "failed":
+                            return 7, "Stage failed"
+                        if mode == "exception":
+                            raise RuntimeError("Stage raised")
+                        if mode == "aborted":
+                            job.abort_requested = True
+                    return 0, f"output-{slot} " + "x" * 6000
+
+                with (
+                    patch.object(config, "load_app_settings", return_value={"approve_before_build": mode == "approval"}),
+                    patch.object(job, "_run_slot_blocking", side_effect=run) as slots,
+                ):
+                    job._worker("planner", "Original request", True, self.active, events, thread_id=tid)
+                    if mode == "approval":
+                        self.assertEqual(slots.call_count, 1)
+                        self.assertEqual(job.status_dict()["pending_approval"]["remaining_role_ids"], order[1:])
+                        adapters.reorder_roles("a", list(reversed(order)))
+                        with patch.object(runner.threading, "Thread", side_effect=lambda **kw: Mock(start=kw["target"])):
+                            approved, _ = job.approve_pending("Approval note", events)
+                        self.assertTrue(approved)
+                        self.assertIn("Approval note", slots.call_args_list[1].args[1])
+
+                if mode in ("failed", "exception", "aborted"):
+                    self.assertEqual([call.args[0] for call in slots.call_args_list], order[:3])
+                    self.assertEqual(job.exit_code, {"failed": 7, "exception": 1, "aborted": 130}[mode])
+                    self.assertEqual(events.call_args.args[0], "error")
+                    self.assertEqual(events.call_args.args[4], specialist)
+                else:
+                    self.assertEqual([call.args[0] for call in slots.call_args_list], order)
+                    self.assertEqual([call.args[0] for call in events.call_args_list].count("pipeline_done"), 1)
+                    self.assertEqual(events.call_args.args[0], "pipeline_done")
+                    self.assertEqual(job.exit_code, 0)
+                for index, call in enumerate(slots.call_args_list):
+                    prompt = call.args[1]
+                    self.assertIn("Start with the prior constraints", prompt)
+                    self.assertEqual(prompt.count("Original request"), 1)
+                    for earlier in order[:index]:
+                        self.assertIn(f"output-{earlier}", prompt)
+                    if index and mode != "approval":
+                        handoff = prompt.split("前置角色产出：\n")[-1]
+                        self.assertLessEqual(len(handoff), runner.MAX_HANDOFF_CHARS)
+
+    def test_pipeline_runs_one_enabled_role_and_godot_gate_requires_final_reviewer(self):
+        role_id = adapters.add_custom_role("a", label="Solo")["id"]
+        roster = {slot: {"enabled": False} for slot in adapters.ROLE_SLOTS}
+        adapters.save_role_bindings(roster, "a")
+        one = adapters.get_workspace_roster("a")
+        self.assertEqual(one["roster_order"], [role_id])
+        self.assertTrue(set(adapters.ROLE_SLOTS).issubset(one["roles"]))
+        with self.assertRaises(ValueError):
+            adapters.delete_custom_role("a", role_id)
+        self._post({"roles": {role_id: {"enabled": False}}}, 400)
+
+        workspace = {**self.active, "type": "godot-game"}
+        job = runner.JobManager()
+        events = Mock()
+        with (
+            patch.object(config, "load_app_settings", return_value={"approve_before_build": True}),
+            patch.object(job, "_run_slot_blocking", return_value=(0, "Solo output")) as run,
+            patch.object(job, "_run_godot_review") as gates,
+        ):
+            job._worker("planner", "Solo task", True, workspace, events)
+        self.assertIsNone(job.pending_approval)
+        self.assertEqual(events.call_args.args[0], "pipeline_done")
+        self.assertEqual(run.call_args.args[0], role_id)
+        gates.assert_not_called()
+
+        adapters.save_role_bindings({"reviewer": {"enabled": True}}, "a")
+        adapters.reorder_roles("a", ["reviewer", role_id])
+        with (
+            patch.object(config, "load_app_settings", return_value={}),
+            patch.object(job, "_run_slot_blocking", return_value=(0, "Role output")) as run,
+            patch.object(job, "_run_godot_review") as gates,
+        ):
+            job._worker("planner", "Reviewer first", True, workspace, events)
+        self.assertEqual([call.args[0] for call in run.call_args_list], ["reviewer", role_id])
+        gates.assert_not_called()
 
 
 class ConversationTestSuite(unittest.TestCase):

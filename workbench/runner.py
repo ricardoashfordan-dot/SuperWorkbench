@@ -20,6 +20,23 @@ SLOT_TO_NODE = {"planner": "agy", "builder": "codex", "reviewer": "dsh"}
 NODE_TO_SLOT = {"agy": "planner", "codex": "builder", "dsh": "reviewer", "planner": "planner", "builder": "builder", "reviewer": "reviewer"}
 CHAT_ROLE_NAMES = {"xiu": "用户", "agy": "策划", "codex": "执行", "dsh": "质检"}
 CHAT_REPLY_TYPES = {"LOCK", "WAITING_APPROVAL", "DONE_SINGLE", "PIPELINE_DONE", ""}
+MAX_HANDOFF_CHARS = 2400
+
+
+def resolve_role_target(target: str, ws_id: str, *, pipeline: bool = False, roster: dict | None = None) -> str:
+    roster = adapters.get_workspace_roster(ws_id) if roster is None else roster
+    slot = roster["roster_order"][0] if pipeline else NODE_TO_SLOT.get(target, target)
+    if slot not in roster["roster_order"]:
+        raise ValueError("目标角色不在当前工作空间的已启用阵容中")
+    return slot
+
+
+def _format_pipeline_handoff(outputs: list[tuple[str, str]]) -> str:
+    if not outputs:
+        return ""
+    headings = [f"[{slot}] " for slot, _ in outputs]
+    budget = (MAX_HANDOFF_CHARS - sum(map(len, headings)) - len(outputs) + 1) // len(outputs)
+    return "\n".join(heading + _clip_context(reply, budget) for heading, (_, reply) in zip(headings, outputs))
 
 
 def _conversation_messages(ws_id: str, thread_id: str) -> list[dict]:
@@ -31,7 +48,7 @@ def _conversation_messages(ws_id: str, thread_id: str) -> list[dict]:
         if sender == "xiu":
             if kind not in ("TASK", "LOCK", "") or (kind == "LOCK" and title.startswith("已批准方案")):
                 continue
-        elif sender not in CHAT_ROLE_NAMES or kind not in CHAT_REPLY_TYPES:
+        elif (sender not in CHAT_ROLE_NAMES and not adapters.is_custom_role_id(sender)) or kind not in CHAT_REPLY_TYPES:
             continue
         if kind == "DONE_SINGLE" and "退出码" in title:
             continue
@@ -58,7 +75,7 @@ def _load_recent_chat_context(ws_id: str, thread_id: str | None = None) -> str:
     if recent:
         lines = ["【本会话近期对话摘录】"]
         for m in recent:
-            sender = CHAT_ROLE_NAMES[m["from"]]
+            sender = CHAT_ROLE_NAMES.get(m["from"], m["from"])
             body = _clip_context(m["body"].strip(), 420)
             lines.append(f"- {sender}: {body}")
         parts.append("\n".join(lines))
@@ -79,8 +96,8 @@ class JobManager:
     def __init__(self) -> None:
         self.lock = threading.Lock()
         self.running = False
-        self.agent = ""  # Node id: agy / codex / dsh
-        self.slot = ""   # Slot id: planner / builder / reviewer
+        self.agent = ""  # Legacy node alias or custom role ID
+        self.slot = ""
         self.engine_name = ""
         self.mode = "single"
         self.workspace_id = ""
@@ -116,6 +133,7 @@ class JobManager:
                     "workspace_id": self.pending_approval.get("workspace_id", ""),
                     "thread_id": self.pending_approval.get("thread_id", ""),
                     "created_at": self.pending_approval.get("created_at", ""),
+                    "remaining_role_ids": list(self.pending_approval.get("remaining_role_ids", ())),
                 }
             return {
                 "running": self.running,
@@ -347,6 +365,8 @@ class JobManager:
     ) -> tuple[int, str]:
         roles = adapters.load_role_bindings(ws_id)
         role_cfg = roles.get(slot, {})
+        if role_cfg.get("enabled") is False:
+            return 1, f"角色 {slot} 已停用。"
         eng_id = role_cfg.get("engine", "")
         if not eng_id:
             msg = f"角色 {slot} 尚未配置引擎，请在「模型与角色配置」中选择可用引擎。"
@@ -363,8 +383,10 @@ class JobManager:
         kind = eng.get("kind", "")
 
         with self.lock:
+            if self.abort_requested:
+                return 130, ""
             self.slot = slot
-            self.agent = SLOT_TO_NODE.get(slot, "agy")
+            self.agent = SLOT_TO_NODE.get(slot, slot)
             self.engine_name = f"{eng['name']} ({model})" if model else eng["name"]
             self.live_reply = ""
             self.current_step_desc = f"正在唤醒 {eng['name']} ({model})..."
@@ -429,6 +451,9 @@ class JobManager:
             proc = subprocess.Popen(cmd, **popen_kwargs)
             with self.lock:
                 self.proc = proc
+                cancelled = self.abort_requested
+            if cancelled:
+                self.abort()
             if use_stdin and proc.stdin:
                 try:
                     proc.stdin.write(cli_prompt)
@@ -471,8 +496,13 @@ class JobManager:
         thread_id: str | None = None,
         attachments: list[dict] | None = None,
     ) -> tuple[bool, str]:
-        slot = NODE_TO_SLOT.get(target, "planner")
         ws_id = workspace.get("id", "")
+        roster = adapters.get_workspace_roster(ws_id)
+        try:
+            slot = resolve_role_target(target, ws_id, pipeline=pipeline, roster=roster)
+        except ValueError as exc:
+            return False, str(exc)
+        role_ids = roster["roster_order"] if pipeline else None
         tid = thread_id or threads.ensure_workspace_thread(ws_id)[0]["id"]
         with self.lock:
             if self.running:
@@ -481,7 +511,7 @@ class JobManager:
             self.abort_requested = False
             self.pending_approval = None
             self.slot = slot
-            self.agent = SLOT_TO_NODE.get(slot, "agy")
+            self.agent = SLOT_TO_NODE.get(slot, slot)
             self.engine_name = ""
             self.mode = "pipeline" if pipeline else "single"
             self.workspace_id = ws_id
@@ -498,7 +528,7 @@ class JobManager:
 
         t = threading.Thread(
             target=self._worker,
-            args=(slot, instruction, pipeline, workspace, on_event, skill_ids or [], tid, attachments or []),
+            args=(slot, instruction, pipeline, workspace, on_event, skill_ids or [], tid, attachments or [], role_ids),
             daemon=True,
         )
         t.start()
@@ -647,6 +677,15 @@ class JobManager:
             )
             return sys_p, user_p, img_paths
 
+        if adapters.is_custom_role_id(slot):
+            role_title = custom_label or role_cfg.get("label") or slot
+            sys_p = custom_sys or f"你是多智能体工作台中的【{role_title}】。请按该角色职责完成用户任务并汇报结果。"
+            user_p = (
+                f"工作空间：{ws_name} ({ws_path})\n{ws_brief}\n{chat_ctx}{skills_section}{att_section}\n\n"
+                f"用户需求：\n「{instruction}」"
+            )
+            return sys_p, user_p, img_paths
+
         role_title = custom_label or ("AIGC 审片与合规质检官" if is_aigc else "独立测试与代码质检官")
         sys_p = custom_sys or f"你是多智能体工作台中的【{role_title}】，负责基于事实做只读审查、风险诊断与客观核验，用简洁中文 Markdown 输出结论。"
         user_p = (
@@ -665,10 +704,10 @@ class JobManager:
         skill_ids: list[str] | None = None,
         thread_id: str | None = None,
         attachments: list[dict] | None = None,
+        role_ids: list[str] | None = None,
     ) -> None:
         ws_path = workspace.get("path", str(config.REPO_ROOT))
         ws_id = workspace.get("id", "")
-        is_game = workspace.get("type") == "godot-game"
 
         def emit(ev, lock_owner, title, body, sender, receiver, att_list=None):
             on_event(
@@ -677,71 +716,44 @@ class JobManager:
             )
 
         try:
-            # Capture history before saving this turn or any same-turn handoff messages.
+            # Read the thread before appending this turn; every handoff uses the same history.
             history_context = _load_recent_chat_context(ws_id, thread_id)
-            if not pipeline:
-                node_id = SLOT_TO_NODE.get(slot, "agy")
-                uname = config.load_app_settings().get("user_name", "我")
-                emit("task", node_id, f"{uname} → {slot.upper()}", instruction, "xiu", node_id, att_list=attachments)
-                sys_p, user_p, img_paths = self._build_prompts(
-                    slot, instruction, workspace, skill_ids, thread_id, attachments, history_context=history_context
+            settings = config.load_app_settings()
+            if pipeline:
+                ids = role_ids if role_ids is not None else adapters.get_workspace_roster(ws_id)["roster_order"]
+                first = SLOT_TO_NODE.get(ids[0], ids[0])
+                emit("task", first, f"自动流转 [1/{len(ids)}]", instruction, "xiu", first, att_list=attachments)
+                self._run_pipeline_steps(
+                    ids, instruction, workspace, emit, skill_ids, thread_id, attachments,
+                    history_context=history_context, pause_after_first=bool(settings.get("approve_before_build")),
                 )
-                rc, full_reply = self._run_slot_blocking(slot, user_p, sys_p, ws_path, image_paths=img_paths, ws_id=ws_id)
-                with self.lock:
-                    self.exit_code = rc
-                    eng_label = self.engine_name or slot.upper()
-                if not self.abort_requested:
-                    emit(
-                        "done_single",
-                        "xiu",
-                        f"{eng_label} ({'完成' if rc == 0 else f'退出码 {rc}'})",
-                        full_reply or "执行完毕，请查看终端日志。",
-                        node_id,
-                        "xiu",
-                    )
                 return
 
-            # Full Auto-Pipeline: Planner -> (Optional Approval Pause) -> Builder -> Reviewer -> Xiu
-            emit("task", "agy", "自动流转 [1/3]：策划拆解方案", instruction, "xiu", "agy", att_list=attachments)
-            sys1, user1, img_paths = self._build_prompts(
-                "planner", instruction, workspace, skill_ids, thread_id, attachments, history_context=history_context
+            node_id = SLOT_TO_NODE.get(slot, slot)
+            uname = settings.get("user_name", "我")
+            emit("task", node_id, f"{uname} → {slot.upper()}", instruction, "xiu", node_id, att_list=attachments)
+            sys_p, user_p, img_paths = self._build_prompts(
+                slot, instruction, workspace, skill_ids, thread_id, attachments, history_context=history_context
             )
-            rc1, reply1 = self._run_slot_blocking("planner", user1, sys1, ws_path, image_paths=img_paths, ws_id=ws_id)
-            if self.abort_requested or rc1 != 0:
-                with self.lock:
-                    rc1 = 130 if self.abort_requested else rc1
-                    self.exit_code = rc1
-                emit("error", "xiu", f"策划阶段中止或异常 (code={rc1})", reply1, "agy", "xiu")
-                return
-
-            if config.load_app_settings().get("approve_before_build"):
-                with self.lock:
-                    self.exit_code = 0
-                    self.pending_approval = {
-                        "id": f"appr-{int(time.time() * 1000)}",
-                        "workspace_id": ws_id,
-                        "thread_id": thread_id,
-                        "workspace": workspace,
-                        "instruction": instruction,
-                        "plan_body": reply1,
-                        "skill_ids": list(skill_ids or []),
-                        "attachments": list(attachments or []),
-                        "history_context": history_context,
-                        "created_at": config.now_iso(),
-                    }
-                emit("waiting_approval", "xiu", "方案已生成 · 等待确认执行", reply1, "agy", "xiu")
-                return
-
-            emit("lock", "codex", "方案已生成并交棒 → 核心执行", reply1, "agy", "codex")
-            self._run_pipeline_tail(
-                instruction, reply1, workspace, emit, skill_ids, thread_id, attachments, history_context=history_context
-            )
-        finally:
+            rc, reply = self._run_slot_blocking(slot, user_p, sys_p, ws_path, image_paths=img_paths, ws_id=ws_id)
             with self.lock:
-                self.running = False
-                self.finished_at = time.time()
-                self.proc = None
-                self.current_step_desc = ""
+                aborted = self.abort_requested
+                self.exit_code = 130 if aborted else rc
+                eng_label = self.engine_name or slot.upper()
+            if aborted:
+                emit("error", "xiu", "角色已中止 (code=130)", reply or "用户已中止任务。", node_id, "xiu")
+            else:
+                emit("done_single", "xiu", f"{eng_label} ({'完成' if rc == 0 else f'退出码 {rc}'})",
+                     reply or "执行完毕，请查看终端日志。", node_id, "xiu")
+        finally:
+            self._finish_job()
+
+    def _finish_job(self) -> None:
+        with self.lock:
+            self.running = False
+            self.finished_at = time.time()
+            self.proc = None
+            self.current_step_desc = ""
 
     def _run_pipeline_tail(
         self,
@@ -756,50 +768,91 @@ class JobManager:
         *,
         history_context: str | None = None,
     ) -> None:
-        ws_path = workspace.get("path", str(config.REPO_ROOT))
-        is_game = workspace.get("type") == "godot-game"
-
-        sys2, user2, img_paths2 = self._build_prompts(
-            "builder", instruction, workspace, skill_ids, thread_id, attachments, history_context=history_context
+        """Continue the legacy three-slot pipeline from an existing plan."""
+        self._run_pipeline_steps(
+            ["builder", "reviewer"], instruction, workspace, emit, skill_ids, thread_id, attachments,
+            history_context=history_context, previous_outputs=[("planner", _clip_context(plan_body, MAX_HANDOFF_CHARS))],
+            note=extra_note,
         )
-        user2 += f"\n\n策划拆解方案：\n{plan_body}"
-        if extra_note:
-            user2 += f"\n\n用户审批补充说明：\n{extra_note}"
+
+    def _run_pipeline_steps(
+        self, role_ids: list[str], instruction: str, workspace: dict, emit,
+        skill_ids: list[str] | None, thread_id: str | None, attachments: list[dict] | None,
+        *, history_context: str | None, previous_outputs: list[tuple[str, str]] | None = None,
+        pause_after_first: bool = False, note: str = "",
+    ) -> None:
+        ws_path = workspace.get("path", str(config.REPO_ROOT))
         ws_id = workspace.get("id")
-        rc2, reply2 = self._run_slot_blocking("builder", user2, sys2, ws_path, image_paths=img_paths2, ws_id=ws_id)
-        if self.abort_requested or rc2 != 0:
+        outputs = list(previous_outputs or [])
+        total = len(outputs) + len(role_ids)
+        for index, slot in enumerate(role_ids):
+            node = SLOT_TO_NODE.get(slot, slot)
+            remaining = role_ids[index + 1:]
+            godot_review = workspace.get("type") == "godot-game" and slot == "reviewer" and not remaining
+            stage_name = {"planner": "策划", "builder": "执行", "reviewer": "质检"}.get(slot, slot)
+            failure_title = "Godot 质检未通过" if godot_review else f"{stage_name}阶段失败"
             with self.lock:
-                rc2 = 130 if self.abort_requested else rc2
-                self.exit_code = rc2
-            emit("error", "xiu", f"执行阶段中止或异常 (code={rc2})", reply2, "codex", "xiu")
-            return
+                self.slot, self.agent = slot, node
+                self.engine_name = ""
+                self.live_reply = ""
+                self.current_step_desc = f"自动流转 [{len(outputs) + 1}/{total}]"
+                aborted = self.abort_requested
+            rc, reply = 130, ""
+            try:
+                if not aborted:
+                    if godot_review:
+                        if ws_id and slot not in adapters.get_workspace_roster(ws_id)["roster_order"]:
+                            rc, reply = 1, "Godot 质检角色已停用。"
+                        else:
+                            rc, reply = self._run_godot_review(Path(ws_path))
+                    else:
+                        sys_p, user_p, img_paths = self._build_prompts(
+                            slot, instruction, workspace, skill_ids, thread_id, attachments,
+                            history_context=history_context,
+                        )
+                        if outputs:
+                            user_p += f"\n\n前置角色产出：\n{_format_pipeline_handoff(outputs)}"
+                        if note:
+                            user_p += f"\n\n用户审批补充说明：\n{_clip_context(note, 800)}"
+                        rc, reply = self._run_slot_blocking(slot, user_p, sys_p, ws_path, image_paths=img_paths, ws_id=ws_id)
+            except Exception as exc:
+                rc, reply = 1, str(exc)
+                failure_title = f"{stage_name}阶段异常"
+                self.append_log(f"{failure_title}: {exc}")
 
-        emit("lock", "dsh", "执行完成并交棒 → 独立质检", reply2, "codex", "dsh")
-
-        failure_title = "Godot 质检未通过" if is_game else "质检阶段失败"
-        try:
-            if is_game:
-                rc3, reply3 = self._run_godot_review(Path(ws_path))
+            outputs.append((slot, _clip_context(reply, MAX_HANDOFF_CHARS)))
+            with self.lock:
+                aborted = self.abort_requested
+                rc = 130 if aborted else rc
+                self.exit_code = rc
+                waiting = rc == 0 and index == 0 and pause_after_first and bool(remaining)
+                if waiting:
+                    self.pending_approval = {
+                        "id": f"appr-{int(time.time() * 1000)}",
+                        "workspace_id": ws_id,
+                        "thread_id": thread_id,
+                        "workspace": workspace.copy(),
+                        "instruction": instruction,
+                        "remaining_role_ids": list(remaining),
+                        "previous_outputs": outputs,
+                        "skill_ids": list(skill_ids or []),
+                        "attachments": list(attachments or []),
+                        "history_context": history_context,
+                        "created_at": config.now_iso(),
+                    }
+            if rc != 0:
+                title = f"{stage_name}已中止" if aborted or rc == 130 else failure_title
+                emit("error", "xiu", f"{title} (code={rc})", reply or "请查看终端日志。", node, "xiu")
+                return
+            if waiting:
+                emit("waiting_approval", "xiu", "首个角色已完成 · 等待确认接力", reply, node, "xiu")
+                return
+            if remaining:
+                next_node = SLOT_TO_NODE.get(remaining[0], remaining[0])
+                emit("lock", next_node, f"{stage_name}完成 → {remaining[0]}", reply, node, next_node)
             else:
-                sys3, user3, _ = self._build_prompts(
-                    "reviewer", instruction, workspace, skill_ids, thread_id, history_context=history_context
-                )
-                user3 += f"\n\n执行方汇报：\n{reply2}\n\n请结合汇报给出简洁清晰的验收建议。"
-                rc3, reply3 = self._run_slot_blocking("reviewer", user3, sys3, ws_path, ws_id=ws_id)
-        except Exception as exc:
-            rc3, reply3 = 1, str(exc)
-            failure_title = "质检阶段异常"
-            self.append_log(f"{failure_title}: {exc}")
-
-        with self.lock:
-            aborted = self.abort_requested
-            self.exit_code = 130 if aborted else rc3
-        if aborted:
-            emit("error", "xiu", "质检已中止", reply3 or "用户已中止质检。", "dsh", "xiu")
-        elif rc3 != 0:
-            emit("error", "xiu", f"{failure_title} (code={rc3})", reply3 or "请查看终端日志。", "dsh", "xiu")
-        else:
-            emit("pipeline_done", "xiu", "质检完成 → 请验收", reply3 or "质检完成", "dsh", "xiu")
+                title = "质检完成 → 请验收" if slot == "reviewer" else "流水线完成 → 请验收"
+                emit("pipeline_done", "xiu", title, reply or "执行完成", node, "xiu")
 
     def _run_godot_review(self, project_dir: Path) -> tuple[int, str]:
         with self.lock:
@@ -824,11 +877,12 @@ class JobManager:
             if not self.pending_approval:
                 return False, "当前没有待审批的执行计划"
             appr = self.pending_approval
+            remaining = appr["remaining_role_ids"]
             self.pending_approval = None
             self.running = True
             self.abort_requested = False
-            self.slot = "builder"
-            self.agent = "codex"
+            self.slot = remaining[0]
+            self.agent = SLOT_TO_NODE.get(self.slot, self.slot)
             self.engine_name = ""
             self.mode = "pipeline"
             self.workspace_id = appr["workspace_id"]
@@ -854,24 +908,22 @@ class JobManager:
 
             try:
                 note_txt = note.strip()
-                emit("lock", "codex", "已批准方案 → 核心执行", note_txt or "已确认方案，开始落地实现。", "xiu", "codex")
-                self._run_pipeline_tail(
+                node = SLOT_TO_NODE.get(remaining[0], remaining[0])
+                emit("lock", node, f"已批准方案 → {remaining[0]}", note_txt or "已确认，继续角色接力。", "xiu", node)
+                self._run_pipeline_steps(
+                    remaining,
                     appr["instruction"],
-                    appr["plan_body"],
                     ws,
                     emit,
                     appr.get("skill_ids"),
                     tid,
                     appr.get("attachments"),
-                    extra_note=note_txt,
                     history_context=appr["history_context"],
+                    previous_outputs=appr["previous_outputs"],
+                    note=note_txt,
                 )
             finally:
-                with self.lock:
-                    self.running = False
-                    self.finished_at = time.time()
-                    self.proc = None
-                    self.current_step_desc = ""
+                self._finish_job()
 
         threading.Thread(target=_resume, daemon=True).start()
         return True, "approved"
