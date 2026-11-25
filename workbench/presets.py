@@ -450,7 +450,6 @@ def find_git_bin() -> str:
     for c in (
         Path(r"C:\Program Files\Git\cmd\git.exe"),
         Path(r"C:\Program Files\Git\bin\git.exe"),
-        Path(r"D:\Git\cmd\git.exe"),
     ):
         if c.exists():
             return str(c)

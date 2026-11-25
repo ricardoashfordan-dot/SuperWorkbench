@@ -209,7 +209,7 @@ const STATIC_I18N = [
   ["#newWsType option[value='aigc-studio']", "AIGC 制片空间（脚本 / 分镜 / 剪辑）", "AIGC Studio (Script / Storyboard / Edit)"],
   ["#newWsType option[value='web-app']", "Web / 前端全栈", "Web / Full-Stack App"],
   ["#newWsType option[value='python']", "Python / 脚本与数据", "Python / Scripts & Data"],
-  ["#newWsType option[value='godot-game']", "Godot 游戏工程", "Godot Game Project"],
+  ["#newWsType option[value='godot-game']", "Godot 游戏工程（实验性 · 特定轮次约定）", "Godot Game Project (Experimental)"],
   ["#newWsType option[value='docs']", "策划与文档空间", "Docs & Planning Workspace"],
   ["#wsModal .modal-foot .btn:first-child", "取消", "Cancel"],
   ["#delModal h3", "移除工作空间", "Remove Workspace"],
@@ -411,7 +411,7 @@ function applyLang(lang) {
   // Plugins cards
   const pCards = document.querySelectorAll("#pane-plugins .skill-card");
   const pluginMeta = [
-    ["Godot 游戏研发实验室", "Godot Game Dev Lab", "内置已启用", "Built-in · Active", "godot-game 空间生效", "Active in godot-game", "提供提交前自检三条、FPS/输入延迟硬指标灯、轮次里程碑、实机截图预览与一键启动试玩。", "Pre-submit 3-gate checks, FPS/input-latency indicators, round milestones, screenshots, and 1-click playtest launch."],
+    ["Godot 游戏研发实验室（实验性）", "Godot Game Dev Lab (Experimental)", "内置 · 实验性", "Built-in · Experimental", "godot-game 空间生效", "Active in godot-game", "面向特定轮次测试约定的实验性预设：提供提交前自检三条、FPS/输入延迟指标灯与轮次里程碑。", "Experimental preset for round-based Godot test layouts: pre-submit 3-gate checks, FPS/input-latency indicators, and round milestones."],
     ["AIGC 漫剧与短片制片空间", "AIGC Short Drama & Film Studio", "内置已启用", "Built-in · Active", "aigc-studio 空间生效", "Active in aigc-studio", "自动初始化 5 级制片目录（脚本/分镜/素材/剪辑/成片），角色槽位切换为「编剧 · 制片 · 审片」，右侧抽屉内置分镜网格画廊、5 阶段进度条与 HTML5 音视频审片室。", "Auto-initializes 5-stage studio folders (script/storyboard/assets/edit/output), switches role labels to Script · Produce · Review, and enables the Storyboard Gallery & HTML5 Screening Room."],
     ["Live Git Diff 与源码审查抽屉", "Live Git Diff & Source Review Drawer", "内置已启用", "Built-in · Active", "general / web / python / godot", "general / web / python / godot", "在右侧抽屉的「代码改动 / 文件」页签实时查看 Git 变更文件、红绿高亮代码 Diff 与无 Git 目录下的行号源码预览。", "Inspect changed Git files, red/green unified diffs, AI-drafted commit messages, and line-numbered source previews in the Right Inspector."]
   ];

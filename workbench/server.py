@@ -186,10 +186,6 @@ def build_snapshot() -> dict:
     ws_msgs = threads.load_thread_messages(ws_id, active_thread["id"])
 
     stage_concept = ""
-    if is_game:
-        candidate = ws_path.parent / "美术规划" / "stage_orbital_bay_concept.jpg"
-        if candidate.exists():
-            stage_concept = str(candidate)
 
     engines = adapters.list_all_engines(mask_secrets=True)
     return {
