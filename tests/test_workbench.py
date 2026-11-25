@@ -999,7 +999,7 @@ class SuperWorkbenchTestSuite(unittest.TestCase):
             )
             self.assertEqual(r.returncode, 0, f"JS syntax error: {r.stderr}")
 
-        forbidden = re.compile(r"决战|DeepSpaceBrawlLab|深空乱斗|R133|ASUS", re.IGNORECASE)
+        forbidden = re.compile(r"决战|DeepSpaceBrawlLab|深空乱斗|R133|ASUS|美术规划|stage_orbital_bay_concept", re.IGNORECASE)
         skip_dirs = {".workbench", "__pycache__", ".git", ".venv", "venv", "tests"}
         for root_dir, dirs, files in os.walk(REPO_ROOT):
             dirs[:] = [d for d in dirs if d not in skip_dirs]
