@@ -373,7 +373,11 @@ class _SkillRedirectHandler(HTTPRedirectHandler):
 
 
 def _download_skill(url: str, deadline: float) -> tuple[bytes, str]:
-    opener = build_opener(ProxyHandler({}), _SkillRedirectHandler(deadline))
+    redirect = _SkillRedirectHandler(deadline)
+    if config.load_app_settings()["use_system_proxy_for_remote_skills"]:
+        opener = build_opener(redirect)
+    else:
+        opener = build_opener(ProxyHandler({}), redirect)
     request = Request(url, headers={"Accept": "text/plain, text/markdown, application/octet-stream"})
     with opener.open(request, timeout=_time_left(deadline)) as response:
         resolved_url = _checked_remote_url(response.geturl())

@@ -4,11 +4,14 @@ import tempfile
 import threading
 import time
 from contextlib import contextmanager
+from copy import deepcopy
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import config
 
 _MESSAGE_LOCK = threading.Lock()
+_HISTORY_CACHE: tuple[tuple, "_History"] | None = None
 
 
 def default_thread_id(ws_id: str) -> str:
@@ -159,7 +162,7 @@ def _write_history_json(path: Path, data) -> None:
     try:
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as file:
             temporary = Path(file.name)
-            json.dump(data, file, ensure_ascii=False, separators=(",", ":"))
+            file.write(json.dumps(data, ensure_ascii=False, separators=(",", ":")))
             file.flush()
             os.fsync(file.fileno())
         os.replace(temporary, path)
@@ -198,41 +201,86 @@ def _message_number(msg: dict) -> int:
     return int(number) if prefix == "msg" and number.isascii() and number.isdecimal() else 0
 
 
-def _last_message_number(messages: list[dict], sequence_path: Path) -> int:
+@dataclass
+class _History:
+    messages: list[dict]
+    by_thread: dict[tuple[str, str], list[dict]] = field(default_factory=dict)
+    high_water: int = 0
+
+    def __post_init__(self) -> None:
+        for message in self.messages:
+            self.index(message)
+
+    def index(self, message: dict) -> None:
+        self.high_water = max(self.high_water, _message_number(message))
+        workspace_id = message.get("workspace_id")
+        if isinstance(workspace_id, str):
+            thread_id = msg_thread_id(message)
+            if isinstance(thread_id, str):
+                self.by_thread.setdefault((workspace_id, thread_id), []).append(message)
+
+
+def _history_fingerprint() -> tuple:
+    path = config.MESSAGES_PATH
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        return (path,)
+    return (path, stat.st_mtime_ns, stat.st_size, stat.st_ctime_ns, stat.st_dev, stat.st_ino)
+
+
+def _load_history() -> _History:
+    global _HISTORY_CACHE
+    fingerprint = _history_fingerprint()
+    if _HISTORY_CACHE is None or _HISTORY_CACHE[0] != fingerprint:
+        _HISTORY_CACHE = (fingerprint, _History(_read_messages()))
+    return _HISTORY_CACHE[1]
+
+
+def _remember_history(history: _History) -> None:
+    global _HISTORY_CACHE
+    _HISTORY_CACHE = (_history_fingerprint(), history)
+
+
+def _last_message_number(history: _History, sequence_path: Path) -> int:
     saved_number = _read_history_json(sequence_path, 0)
     if type(saved_number) is not int or saved_number < 0:
         raise ValueError("Invalid message sequence")
-    return max(saved_number, max(map(_message_number, messages), default=0))
+    return max(saved_number, history.high_water)
 
 
 def load_thread_messages(ws_id: str, thread_id: str) -> list[dict]:
     with _message_transaction():
-        return [msg for msg in _read_messages() if _matches_history(msg, ws_id, thread_id)]
+        return deepcopy(_load_history().by_thread.get((ws_id, thread_id), []))
 
 
 def append_chat_message(message: dict) -> dict:
     with _message_transaction():
-        messages = _read_messages()
+        history = _load_history()
         sequence_path = config.MESSAGES_PATH.with_suffix(".sequence.json")
-        number = _last_message_number(messages, sequence_path) + 1
+        number = _last_message_number(history, sequence_path) + 1
         # Reserve the ID before publishing the message. A failed append can leave a gap.
         _write_history_json(sequence_path, number)
-        message = {**message, "id": f"msg-{number:03d}"}
-        messages.append(message)
-        _write_history_json(config.MESSAGES_PATH, messages)
-        return message
+        message = deepcopy({**message, "id": f"msg-{number:03d}"})
+        _write_history_json(config.MESSAGES_PATH, [*history.messages, message])
+        history.messages.append(message)
+        history.index(message)
+        _remember_history(history)
+        return deepcopy(message)
 
 
 def clear_messages(ws_id: str, thread_id: str | None = None) -> None:
     with _message_transaction():
-        messages = _read_messages()
+        history = _load_history()
+        messages = history.messages
         kept = [msg for msg in messages if not _matches_history(msg, ws_id, thread_id)]
         if len(kept) == len(messages):
             return
         sequence_path = config.MESSAGES_PATH.with_suffix(".sequence.json")
         # Keep the high-water mark even when clearing legacy history before its first append.
-        _write_history_json(sequence_path, _last_message_number(messages, sequence_path))
+        _write_history_json(sequence_path, _last_message_number(history, sequence_path))
         _write_history_json(config.MESSAGES_PATH, kept)
+        _remember_history(_History(kept))
 
 
 def set_thread_summary(thread_id: str, summary: str, compacted_count: int, *, ws_id: str | None = None) -> dict | None:

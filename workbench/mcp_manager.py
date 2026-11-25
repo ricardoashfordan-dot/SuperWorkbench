@@ -1,20 +1,61 @@
 """
 Visual MCP (Model Context Protocol) Registry & 1-Click Local CLI Sync.
 Zero-JSON beginner-friendly management for stdio & HTTP MCP servers,
-with native sync to installed agy / codex / claude CLIs.
+with native sync to installed agy / codex / claude / gemini CLIs.
 """
+import http.client
 import os
 import re
 import shlex
+import shutil
 import subprocess
+import threading
+import time
+from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import adapters
 import config
 
 SECRET_KEY_HINTS = ("TOKEN", "KEY", "SECRET", "PASS", "AUTH")
+MCP_PROBE_TIMEOUT_SECONDS = 4
+_HTTP_PROBES = threading.BoundedSemaphore(4)
 
 MCP_TEMPLATES = [
+    {
+        "id": "fetch",
+        "name": "fetch",
+        "title": "网页抓取",
+        "desc": "读取指定网页并提取正文。运行需要 uvx。",
+        "transport": "stdio",
+        "command": "uvx",
+        "args": ["mcp-server-fetch"],
+        "url": "",
+        "env_hints": [],
+    },
+    {
+        "id": "context7",
+        "name": "context7",
+        "title": "Context7 框架文档",
+        "desc": "按库和版本查找框架文档与示例。运行需要 npx。",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@upstash/context7-mcp@latest"],
+        "url": "",
+        "env_hints": [],
+    },
+    {
+        "id": "memory",
+        "name": "memory",
+        "title": "知识图谱记忆",
+        "desc": "将实体、关系和观察保存为长期记忆。运行需要 npx。",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-memory"],
+        "url": "",
+        "env_hints": [],
+    },
     {
         "id": "playwright",
         "name": "playwright",
@@ -208,7 +249,7 @@ def delete_server(name: str, unsync: bool = True) -> dict:
     target = next((s for s in servers if s.get("name") == slug), None)
     unsync_results = {}
     if unsync and target:
-        unsync_results = remove_from_clis(slug, target.get("synced_clis") or None)
+        unsync_results = remove_from_clis(slug, target.get("synced_clis") or ["agy", "codex", "claude"])
     raw["servers"] = [s for s in servers if s.get("name") != slug]
     _save_raw_registry(raw)
     return {"deleted": slug, "unsync": unsync_results}
@@ -243,7 +284,7 @@ def _run_cli(bin_path: str, args: list[str], timeout: int = 18) -> tuple[bool, s
 def _supported_sync_clis(target_clis: list[str] | None = None) -> dict[str, str]:
     clis = adapters.detect_cli_status()
     out = {}
-    for cid in ("agy", "codex", "claude"):
+    for cid in ("agy", "codex", "claude", "gemini"):
         if target_clis and cid not in target_clis:
             continue
         info = clis.get(cid, {})
@@ -296,10 +337,28 @@ def sync_server_to_clis(name: str, target_clis: list[str] | None = None) -> dict
                 for k, v in env_items:
                     cli_args += ["-e", f"{k}={v}"]
                 cli_args += [slug, "--", srv["command"], *(srv.get("args") or [])]
+        elif cid == "gemini":
+            cli_args = ["mcp", "add", "--scope", "user", "--transport", transport]
+            if transport == "http":
+                cli_args += [slug, srv["url"]]
+            else:
+                for k, v in env_items:
+                    cli_args += ["--env", f"{k}={v}"]
+                cli_args += [slug, srv["command"]]
+                if srv.get("args"):
+                    cli_args += ["--", *srv["args"]]
+            if os.name == "nt" and bin_path.lower().endswith((".cmd", ".bat")) and any(
+                re.search(r'[%!&|<>^()"\r\n]', arg) for arg in cli_args
+            ):
+                results[cid] = {"ok": False, "detail": "Gemini 批处理启动器无法安全传递此配置，请在 Gemini 中手动配置。"}
+                continue
         else:
             continue
 
         ok, detail = _run_cli(bin_path, cli_args)
+        if cid == "gemini":
+            # CLI output can include the command, URL, or configured environment values.
+            detail = "已同步" if ok else "Gemini 同步失败，请检查 Gemini CLI 的 MCP 配置"
         results[cid] = {"ok": ok, "detail": detail or ("已同步" if ok else "同步失败")}
         if ok:
             synced.add(cid)
@@ -315,7 +374,10 @@ def remove_from_clis(name: str, target_clis: list[str] | None = None) -> dict:
     available = _supported_sync_clis(target_clis)
     results = {}
     for cid, bin_path in available.items():
-        ok, detail = _run_cli(bin_path, ["mcp", "remove", slug])
+        args = ["mcp", "remove"]
+        if cid == "gemini":
+            args += ["--scope", "user"]
+        ok, detail = _run_cli(bin_path, [*args, slug])
         results[cid] = {"ok": ok, "detail": detail or ("已移除" if ok else "未配置或移除失败")}
     return results
 
@@ -335,3 +397,116 @@ def scan_cli_mcps() -> dict:
     raw["last_scan"] = scanned
     _save_raw_registry(raw)
     return scanned
+
+
+def _probe_result(transport: str, reachable: bool, detail_zh: str, detail_en: str, *, ok: bool = True) -> dict:
+    return {
+        "ok": ok, "reachable": reachable, "transport": transport,
+        "detail_zh": detail_zh, "detail_en": detail_en,
+    }
+
+
+def _stdio_command_exists(command: str) -> bool:
+    if not command.strip():
+        return False
+    resolved = shutil.which(os.path.expanduser(command.strip()))
+    if not resolved:
+        return False
+    if os.name == "nt":
+        extensions = os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").lower().split(";")
+        return Path(resolved).suffix.lower() in extensions
+    return True
+
+
+def _probe_time_left(deadline: float) -> float:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError
+    return remaining
+
+
+def _http_probe_status(url, port: int | None, deadline: float) -> int:
+    connection_type = http.client.HTTPSConnection if url.scheme == "https" else http.client.HTTPConnection
+    target = url.path or "/"
+    if url.query:
+        target += "?" + url.query
+    def request(method: str) -> int:
+        connection = connection_type(url.hostname, port, timeout=_probe_time_left(deadline))
+        try:
+            connection.request(method, target)
+            with connection.getresponse() as response:
+                if method == "GET":
+                    response.read(1024)
+                return response.status
+        finally:
+            connection.close()
+
+    status = request("HEAD")
+    return request("GET") if status == 405 else status
+
+
+def _test_http_connectivity(value: str) -> dict:
+    try:
+        url = urlsplit(value)
+        port = url.port
+        if (
+            url.scheme not in ("http", "https")
+            or not url.hostname
+            or url.username is not None
+            or url.password is not None
+            or "\\" in value
+            or any(ord(char) <= 32 or ord(char) == 127 for char in value)
+        ):
+            raise ValueError
+    except ValueError:
+        return _probe_result("http", False, "服务地址无效，请填写 HTTP 或 HTTPS 地址。",
+                             "Enter a valid HTTP or HTTPS endpoint.")
+
+    deadline = time.monotonic() + MCP_PROBE_TIMEOUT_SECONDS
+    if not _HTTP_PROBES.acquire(blocking=False):
+        return _probe_result("http", False, "正在进行的自检过多，请稍后重试。", "Too many checks are running. Try again shortly.")
+    future = Future()
+
+    def run_probe() -> None:
+        try:
+            future.set_result(_http_probe_status(url, port, deadline))
+        except Exception as exc:
+            future.set_exception(exc)
+        finally:
+            _HTTP_PROBES.release()
+
+    try:
+        threading.Thread(target=run_probe, daemon=True).start()
+    except RuntimeError:
+        _HTTP_PROBES.release()
+        return _probe_result("http", False, "无法启动连通性自检。", "Could not start the connectivity check.")
+    try:
+        status = future.result(timeout=_probe_time_left(deadline))
+    except (TimeoutError, FutureTimeoutError):
+        return _probe_result("http", False, "连通性自检超时（4 秒）。", "Connectivity check timed out (4 seconds).")
+    except Exception:
+        # Never surface an exception containing the URL, response headers, or credentials.
+        return _probe_result("http", False, "无法连接服务地址。", "Could not connect to the endpoint.")
+    if 300 <= status < 400:
+        return _probe_result("http", True, f"收到 HTTP {status}，未跟随重定向。",
+                             f"Received HTTP {status}. Redirects were not followed.")
+    return _probe_result("http", True, f"收到 HTTP {status}，服务地址可达。",
+                         f"Received HTTP {status}. The endpoint is reachable.")
+
+
+def test_server_connectivity(name: str) -> dict:
+    """Check executable or HTTP reachability without launching an MCP server."""
+    slug = _slugify_name(name) if name.strip() else ""
+    servers = load_mcp_registry()["servers"]
+    server = next((entry for entry in servers if entry["name"] == slug), None)
+    if server is None:
+        return _probe_result("", False, "未找到 MCP 服务。", "MCP server not found.", ok=False)
+    if server.get("transport") == "http":
+        return _test_http_connectivity(str(server.get("url") or ""))
+    try:
+        exists = _stdio_command_exists(str(server.get("command") or ""))
+    except (OSError, ValueError):
+        exists = False
+    if exists:
+        return _probe_result("stdio", True, "已找到可执行文件。", "Executable found.")
+    return _probe_result("stdio", False, "未找到可执行文件，请检查命令或 PATH。", "Executable not found. Check the command or PATH.")

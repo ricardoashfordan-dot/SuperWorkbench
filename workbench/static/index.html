@@ -529,6 +529,16 @@
             <button class="btn sm danger" id="btnQuitBackend" onclick="quitBackendService()">立即退出后台</button>
           </div>
         </div>
+
+        <div class="insp-card" style="flex-direction:row;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+          <div style="min-width:0;flex:1;">
+            <div style="font-size:13px;font-weight:550;color:var(--text);" id="lblPrefProxyTitle">远程导入 Skill 时使用系统代理</div>
+            <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;" id="lblPrefProxyDesc">默认关闭（强制直连 GitHub，隔离更严格）；若本机需经系统代理访问 GitHub 可按需开启（仍受 HTTPS 与白名单限制）。</div>
+          </div>
+          <label style="display:flex;align-items:center;cursor:pointer;flex-shrink:0;">
+            <input type="checkbox" id="toggleSkillProxy" onchange="toggleRemoteSkillProxy(this.checked)" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" />
+          </label>
+        </div>
       </div>
 
       <!-- Pane 1: Skills (Fully Functional!) -->

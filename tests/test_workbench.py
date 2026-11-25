@@ -77,6 +77,34 @@ class SkillEcosystemTests(unittest.TestCase):
 
         return patch.object(HTTPSHandler, "https_open", autospec=True, side_effect=open_https)
 
+    def test_remote_skill_proxy_is_direct_by_default_and_can_be_enabled(self):
+        settings = self.root / "app-settings.json"
+        data = self.root / "uninitialized"
+        opener = Mock()
+        opener.open.side_effect = lambda *_a, **_k: addinfourl(io.BytesIO(self.raw), Message(), self.base_url, 200)
+        with (
+            patch.multiple(config, SETTINGS_PATH=settings, DATA_DIR=data, HISTORY_DIR=data / "history"),
+            patch.object(skills, "build_opener", return_value=opener) as build,
+        ):
+            self.assertFalse(config.load_app_settings()["use_system_proxy_for_remote_skills"])
+            self.assertEqual(skills.preview_remote_skill(self.base_url)["resolved_url"], self.base_url)
+            direct_handlers = build.call_args.args
+            self.assertEqual(len(direct_handlers), 2)
+            self.assertIsInstance(direct_handlers[0], skills.ProxyHandler)
+            self.assertEqual(direct_handlers[0].proxies, {})
+            self.assertIsInstance(direct_handlers[1], skills._SkillRedirectHandler)
+            self.assertFalse(data.exists())
+            self.assertFalse(settings.exists())
+
+            config.save_app_settings({"use_system_proxy_for_remote_skills": True})
+            self.assertTrue(config.load_app_settings()["use_system_proxy_for_remote_skills"])
+            skills.preview_remote_skill(self.base_url)
+            enabled_handlers = build.call_args.args
+            self.assertEqual(len(enabled_handlers), 1)
+            self.assertIsInstance(enabled_handlers[0], skills._SkillRedirectHandler)
+            self.assertFalse(config.save_app_settings({"use_system_proxy_for_remote_skills": "false"})
+                             ["use_system_proxy_for_remote_skills"])
+
     def test_discovery_metadata_and_read_only_local_engines(self):
         expected = {
             "aigc-storyboard": "aigc", "code-review-strict": "engineering", "git-commit-release": "engineering",
@@ -295,6 +323,138 @@ class SkillEcosystemTests(unittest.TestCase):
             handler.do_POST()
             self.assertEqual(handler._send_json.call_args.args[0]["skill"]["filename"], "SKILL.md")
             snapshot.assert_called_once()
+
+
+class McpConnectivityTests(unittest.TestCase):
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        registry = patch.object(config, "MCP_PATH", Path(scratch.name) / "mcp_servers.json")
+        registry.start()
+        self.addCleanup(registry.stop)
+
+    def test_new_templates_and_stdio_command_check_do_not_start_a_process(self):
+        templates = {item["id"]: item for item in mcp_manager.load_mcp_registry()["templates"]}
+        for key, command, args in (
+            ("fetch", "uvx", ["mcp-server-fetch"]),
+            ("context7", "npx", ["-y", "@upstash/context7-mcp@latest"]),
+            ("memory", "npx", ["-y", "@modelcontextprotocol/server-memory"]),
+        ):
+            with self.subTest(template=key):
+                item = templates[key]
+                self.assertEqual((item["transport"], item["command"], item["args"]), ("stdio", command, args))
+
+        mcp_manager.upsert_server("local", command=sys.executable, args=["-c", "print('must not run')"])
+        mcp_manager.upsert_server("missing", command=str(config.MCP_PATH.parent / "missing-executable"))
+        with patch.object(mcp_manager.subprocess, "run", side_effect=AssertionError("stdio must not execute anything")):
+            found = mcp_manager.test_server_connectivity("local")
+            missing = mcp_manager.test_server_connectivity("missing")
+        self.assertTrue(found["ok"])
+        self.assertTrue(found["reachable"])
+        self.assertFalse(missing["reachable"])
+        self.assertEqual(missing["transport"], "stdio")
+        self.assertFalse(mcp_manager.test_server_connectivity("unknown")["ok"])
+
+    def test_http_head_fallback_and_redirect_never_disclose_credentials(self):
+        token = "fixture-private-value"
+        mcp_manager.upsert_server("remote", transport="http", url=f"https://example.invalid/mcp?key={token}",
+                                  env={"API_TOKEN": token})
+        head, get, redirect = mock.MagicMock(), mock.MagicMock(), mock.MagicMock()
+        for response, status in ((head, 405), (get, 401), (redirect, 302)):
+            response.status = status
+            response.__enter__.return_value = response
+        redirect.headers = {"Location": "https://elsewhere.invalid/"}
+        first, second, third = Mock(), Mock(), Mock()
+        for connection, response in ((first, head), (second, get), (third, redirect)):
+            connection.getresponse.return_value = response
+        with patch.object(mcp_manager.http.client, "HTTPSConnection", side_effect=[first, second, third]) as connect:
+            fallback = mcp_manager.test_server_connectivity("remote")
+            redirected = mcp_manager.test_server_connectivity("remote")
+        self.assertTrue(fallback["reachable"])
+        self.assertIn("401", fallback["detail_en"])
+        first.request.assert_called_once_with("HEAD", f"/mcp?key={token}")
+        second.request.assert_called_once_with("GET", f"/mcp?key={token}")
+        get.read.assert_called_once_with(1024)
+        head.read.assert_not_called()
+        redirect.read.assert_not_called()
+        third.request.assert_called_once_with("HEAD", f"/mcp?key={token}")
+        self.assertEqual(connect.call_count, 3)
+        self.assertIn("Redirects were not followed", redirected["detail_en"])
+        self.assertNotIn(token, json.dumps([fallback, redirected]))
+        self.assertNotIn("elsewhere.invalid", json.dumps(redirected))
+
+        with patch.object(mcp_manager.http.client, "HTTPSConnection", side_effect=OSError(token)):
+            failed = mcp_manager.test_server_connectivity("remote")
+        self.assertFalse(failed["reachable"])
+        self.assertNotIn(token, json.dumps(failed))
+
+    def test_http_hard_deadline_and_invalid_credentials_in_url(self):
+        mcp_manager.upsert_server("local-http", transport="http", url="http://localhost:8766/mcp")
+        mcp_manager.upsert_server("invalid-http", transport="http", url="http://user:password@localhost/mcp")
+        release = threading.Event()
+        finished = threading.Event()
+
+        def block(*_a, **_k):
+            try:
+                release.wait(2)
+                raise OSError("probe cancelled in test")
+            finally:
+                finished.set()
+
+        with (
+            patch.object(mcp_manager, "MCP_PROBE_TIMEOUT_SECONDS", 0.2),
+            patch.object(mcp_manager.http.client, "HTTPConnection", side_effect=block) as connect,
+        ):
+            try:
+                invalid = mcp_manager.test_server_connectivity("invalid-http")
+                self.assertFalse(invalid["reachable"])
+                self.assertNotIn("password", json.dumps(invalid))
+                connect.assert_not_called()
+                result = mcp_manager.test_server_connectivity("local-http")
+                self.assertFalse(result["reachable"])
+                self.assertIn("timed out", result["detail_en"])
+                self.assertFalse(finished.is_set())
+            finally:
+                release.set()
+        self.assertTrue(finished.wait(2))
+
+    def test_gemini_sync_uses_user_scope_and_keeps_failures_local(self):
+        token = "fixture-private-value"
+        mcp_manager.upsert_server("docs", command="npx", args=["-y", "fixture-package"], env={"TOKEN": token})
+        mcp_manager.upsert_server("bridge", transport="http", url="https://example.invalid/mcp")
+        detected = {"gemini": {"installed": True, "path": "gemini.CMD"}}
+        with (
+            patch.object(adapters, "detect_cli_status", return_value=detected),
+            patch.object(mcp_manager, "_run_cli", side_effect=[(True, token), (False, token), (True, "")]) as run,
+        ):
+            local = mcp_manager.sync_server_to_clis("docs")
+            remote = mcp_manager.sync_server_to_clis("bridge")
+            mcp_manager.delete_server("docs")
+        self.assertEqual(local["synced"], ["gemini"])
+        self.assertFalse(remote["results"]["gemini"]["ok"])
+        self.assertNotIn(token, json.dumps([local, remote]))
+        self.assertEqual([call.args[1] for call in run.call_args_list], [
+            ["mcp", "add", "--scope", "user", "--transport", "stdio", "--env", f"TOKEN={token}",
+             "docs", "npx", "--", "-y", "fixture-package"],
+            ["mcp", "add", "--scope", "user", "--transport", "http", "bridge", "https://example.invalid/mcp"],
+            ["mcp", "remove", "--scope", "user", "docs"],
+        ])
+
+    def test_mcp_api_returns_probe_contract_without_a_snapshot(self):
+        mcp_manager.upsert_server("local", command=sys.executable)
+        handler = server.WorkbenchHandler.__new__(server.WorkbenchHandler)
+        handler.path = "/api/mcp"
+        handler._validate_host_and_origin = Mock(return_value=True)
+        handler._authorize = Mock(return_value=True)
+        handler._read_body = Mock(return_value={"action": "test", "name": "local"})
+        handler._send_json = Mock()
+        with patch.object(server, "build_snapshot") as snapshot:
+            handler.do_POST()
+        snapshot.assert_not_called()
+        payload, status = handler._send_json.call_args.args
+        self.assertEqual(status, 200)
+        self.assertEqual(set(payload), {"ok", "reachable", "transport", "detail_zh", "detail_en"})
+        self.assertTrue(payload["reachable"])
 
 
 class WorkspaceRosterTests(unittest.TestCase):
@@ -651,6 +811,78 @@ print(json.dumps([[len(rows), rows[0]["body"], rows[1]["body"]] for rows in hist
         config.write_json(config.MESSAGES_PATH, [{"id": "msg-001", "body": "unscoped legacy message"}])
         rows = threads.load_thread_messages("super-workbench", "default-super-workbench")
         self.assertEqual(rows, [])
+
+    def test_history_cache_reuses_thread_index_and_notices_same_size_replacement(self):
+        legacy = [
+            {"id": "msg-010", "workspace_id": "workspace-a", "body": "old"},
+            {"id": "msg-011", "workspace_id": "workspace-b", "body": "other"},
+            {"id": "msg-012", "body": "unscoped"},
+        ]
+        config.write_json(config.MESSAGES_PATH, legacy)
+        with patch.object(threads, "_read_messages", wraps=threads._read_messages) as read:
+            first = threads.load_thread_messages("workspace-a", self.thread)
+            self.assertEqual(first[0]["body"], "old")
+            first[0]["body"] = "in-memory mutation"
+            self.assertEqual(threads.load_thread_messages("workspace-a", self.thread)[0]["body"], "old")
+            self.assertEqual(threads.load_thread_messages("workspace-b", "default-workspace-b")[0]["body"], "other")
+            self.assertEqual(threads.load_thread_messages("super-workbench", "default-super-workbench"), [])
+            self.assertEqual(read.call_count, 1)
+
+            original = config.MESSAGES_PATH.stat()
+            swap = config.MESSAGES_PATH.with_name("replacement.json")
+            legacy[0]["body"] = "new"
+            config.write_json(swap, legacy)
+            os.utime(swap, ns=(original.st_atime_ns, original.st_mtime_ns))
+            os.replace(swap, config.MESSAGES_PATH)
+            self.assertEqual(config.MESSAGES_PATH.stat().st_size, original.st_size)
+            self.assertEqual(threads.load_thread_messages("workspace-a", self.thread)[0]["body"], "new")
+            self.assertEqual(read.call_count, 2)
+            created = threads.append_chat_message({"workspace_id": "workspace-a", "body": "appended"})
+            self.assertEqual(created["id"], "msg-013")
+            threads.clear_messages("workspace-b", "default-workspace-b")
+            self.assertEqual(threads.load_thread_messages("workspace-b", "default-workspace-b"), [])
+            self.assertEqual(len(threads.load_thread_messages("workspace-a", self.thread)), 2)
+            self.assertEqual(read.call_count, 2)
+
+    def test_cached_history_refreshes_after_concurrent_processes_append_and_restart(self):
+        config.write_json(config.MESSAGES_PATH, [{"id": "msg-100", "workspace_id": "workspace-a", "body": "legacy"}])
+        self.assertEqual(len(threads.load_thread_messages("workspace-a", self.thread)), 1)
+        append_script = """
+import sys
+import threads
+workspace = sys.argv[1]
+for number in range(12):
+    threads.append_chat_message({"workspace_id": workspace, "body": f"message {number}"})
+"""
+        restart_script = """
+import json
+import threads
+before = [len(threads.load_thread_messages(ws, threads.default_thread_id(ws)))
+          for ws in ("workspace-a", "workspace-b")]
+threads.clear_messages("workspace-b")
+entry = threads.append_chat_message({"workspace_id": "workspace-a", "body": "after restart"})
+print(json.dumps([before, entry["id"]]))
+"""
+
+        def run_python(script, *args):
+            return subprocess.run(
+                [sys.executable, "-c", script, *args], cwd=WORKBENCH_DIR, capture_output=True,
+                encoding="utf-8", env={**os.environ, "SUPER_WORKBENCH_DATA_DIR": str(self.project)},
+                check=True, timeout=30, creationflags=config.NO_WINDOW_FLAGS,
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            jobs = [pool.submit(run_python, append_script, workspace) for workspace in ("workspace-a", "workspace-b")]
+            for job in jobs:
+                job.result()
+        a = threads.load_thread_messages("workspace-a", self.thread)
+        b = threads.load_thread_messages("workspace-b", "default-workspace-b")
+        self.assertEqual((len(a), len(b)), (13, 12))
+        self.assertEqual(sorted(row["id"] for row in a + b), [f"msg-{i:03d}" for i in range(100, 125)])
+        result = run_python(restart_script)
+        self.assertEqual(json.loads(result.stdout), [[13, 12], "msg-125"])
+        self.assertFalse(threads.load_thread_messages("workspace-b", "default-workspace-b"))
+        self.assertEqual(threads.load_thread_messages("workspace-a", self.thread)[-1]["id"], "msg-125")
 
 
 class PipelineReviewTests(unittest.TestCase):
