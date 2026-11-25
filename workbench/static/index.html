@@ -189,7 +189,7 @@
             <input type="file" id="filePicker" multiple style="display:none;" onchange="handlePickedFiles(this.files); this.value='';" />
 
             <!-- Compact Workspace Roster & Scene Popover (1-click per-workspace team switch!) -->
-            <div class="roster-popover" id="rosterPopover"></div>
+            <div class="roster-popover" id="rosterPopover" onclick="event.stopPropagation()"></div>
 
             <div class="attached-skills" id="attachedSkillsBar"></div>
             <textarea id="cmdInput" rows="1" placeholder="输入想法或指令… 支持点 + 添加图片/附件/技能，直接粘贴截图，或 Ctrl+Enter 发送"></textarea>

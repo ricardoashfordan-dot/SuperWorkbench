@@ -921,9 +921,13 @@ function toggleRosterPopover(force) {
   }
 }
 
-function toggleRosterAddForm(force) {
+function toggleRosterAddForm(force, ev) {
+  if (ev && ev.stopPropagation) ev.stopPropagation();
   rosterAddOpen = force !== undefined ? force : !rosterAddOpen;
   renderRosterPopover();
+  if (rosterAddOpen) {
+    setTimeout(() => document.getElementById("popAddRoleLabel")?.focus(), 0);
+  }
 }
 
 function renderRosterPopover() {
@@ -1000,7 +1004,7 @@ function renderRosterPopover() {
       </div>
       <textarea id="popAddRolePrompt" rows="2" maxlength="2000" placeholder="${t("可选：该角色的人设提示词（System Prompt）", "Optional: System prompt for this specialist role")}"></textarea>
       <div style="display:flex;justify-content:flex-end;gap:6px;">
-        <button class="btn sm" onclick="toggleRosterAddForm(false)">${t("取消", "Cancel")}</button>
+        <button class="btn sm" onclick="toggleRosterAddForm(false, event)">${t("取消", "Cancel")}</button>
         <button class="btn sm solid" onclick="submitAddCustomRole('popover')">${t("添加到本空间", "Add Role")}</button>
       </div>
     </div>` : "";
@@ -1022,7 +1026,7 @@ function renderRosterPopover() {
         <span class="skill-src">${scope === "workspace" ? t("本空间独立", "Workspace Override") : t("继承全局", "Global Default")}</span>
       </div>
       <div style="display:flex;align-items:center;gap:6px;">
-        ${canAddMore ? `<button class="btn sm" onclick="toggleRosterAddForm()">${t("+ 添加专家角色", "+ Add Role")}</button>` : ""}
+        ${canAddMore ? `<button class="btn sm" onclick="toggleRosterAddForm(undefined, event)">${t("+ 添加专家角色", "+ Add Role")}</button>` : ""}
         ${scope === "workspace" ? `<button class="btn sm" onclick="resetWorkspaceRoster()">${t("恢复全局", "Reset")}</button>` : ""}
         <button class="icon-btn" style="width:24px;height:24px;" onclick="toggleRosterPopover(false)">&times;</button>
       </div>
@@ -2354,7 +2358,11 @@ function render(snap, fromMutation = false) {
       ? (currentLang === "en" ? activeSceneObj.label_en : activeSceneObj.label_zh)
       : t("切换阵容", "Roster");
   }
-  if (document.getElementById("rosterPopover")?.classList.contains("show")) {
+  if (
+    document.getElementById("rosterPopover")?.classList.contains("show")
+    && !rosterAddOpen
+    && !document.activeElement?.closest("#rosterPopover")
+  ) {
     renderRosterPopover();
   }
 
