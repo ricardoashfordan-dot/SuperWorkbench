@@ -30,19 +30,20 @@ Orchestrate your local AI CLIs (**Antigravity `agy`**, **OpenAI `codex`**, **Cla
 ## Highlights
 
 - **Zero Extra Dependencies**: Pure Python 3 standard library backend + single-file HTML/CSS/JS frontend. No Docker, Redis, Node build pipeline, or database required.
-- **Universal 3-Role Orchestration (`Planner` → `Builder` → `Reviewer`)**:
-  - Real-time NDJSON & SSE streaming with collapsible execution traces.
-  - 46px Codex-mini vertical paper-plane relay rail for instant handoff visibility.
-  - Optional minimalist **Approve-Before-Build** pause gate in `Settings` (defaults to uninterrupted flow; when enabled, shows a single inline approval bar above the composer).
+- **Per-Workspace Role Rosters & 5 Smart Scenes**:
+  - Real-time NDJSON & SSE streaming with collapsible execution traces and a 46px vertical paper-plane relay rail.
+  - **Independent per-workspace rosters**: Switch between Coding, Video / Vibe Creation, 3D Art & Modeling, Paper & Deep Study, and Security Audit in 1 click without overwriting other workspaces.
+  - **Model-short avatars & honest defaults**: Displays clean abbreviations of your actual configured models (`GPT`, `CLD`, `GEM`, `DS`, `QWN`, `DSH`, etc.) — never fakes uninstalled CLIs.
+  - Optional minimalist **Approve-Before-Build** pause gate in `Settings` and portable JSON roster preset export/import.
 - **Multi-Workspace & Multi-Thread Conversations**:
-  - Isolate projects cleanly across `General`, `Web`, `Python`, `AIGC Studio`, and `Godot Game` presets.
-  - Multiple conversation threads per workspace with one-click **Context Compaction** (distills long histories into persistent working memory).
+  - Isolate projects cleanly across `General`, `Web`, `Python`, `AIGC Studio`, and `Godot Game` *(experimental — tailored to a specific round-based Godot test layout)* presets.
+  - Per-workspace isolated chat history with monotonic unique IDs, automatic bounded thread context injection across all CLI transports, and one-click **Context Compaction**.
 - **Codex / AGY-Style Multimodal Composer**:
   - `+` action button for uploading images, local files, or mounting `/skills`, plus `Ctrl+V` screenshot paste and drag-and-drop.
 - **Visual Settings Center (Beginner-Friendly & Zero-JSON)**:
-  - **Skills**: 4-layer auto-discovery (built-in, workbench library, per-project `.agents/skills/`, and read-only local `~/.codex/skills`, `~/.gemini/antigravity/skills`, `~/.claude/skills`), zero-YAML creation, and universal prompt injection across all engines.
-  - **Visual MCP Manager**: One-click templates (Playwright, GitHub, Figma, ComfyUI, Filesystem) with direct sync to installed local `agy` / `codex` / `claude` CLIs.
-  - **Roles & BYO Engines**: Auto-discovers installed CLIs & local Codex models, plus 1-click presets for Ollama, DeepSeek, OpenRouter, and custom CLI templates.
+  - **Skill Ecosystem (9 Built-in Skills)**: 4-layer auto-discovery (built-in, workbench library, `.agents/skills/`, and read-only `~/.codex`, `~/.gemini/antigravity`, `~/.gemini`, `~/.claude`, `~/.dsh`), category/tag search, hardened **Import from GitHub** (mandatory full-text preview before install), and 1-click `SKILL.md` export.
+  - **Visual MCP Manager**: One-click templates (Playwright, GitHub, Figma, ComfyUI, **Blender 3D**, Filesystem) with direct sync to installed local `agy` / `codex` / `claude` CLIs.
+  - **Roles & BYO Engines**: Auto-discovers installed CLIs & local Codex models with `--doctor` version probes, plus 1-click presets for Ollama, DeepSeek, OpenRouter, and custom CLI templates.
 - **Upgraded Right Inspector Drawer** (collapsed by default):
   - **Live Console Stream** with smart scroll-lock.
   - **Live Git Diff & Line-Numbered Source Preview** (red/green unified diff when Git is present; graceful file preview fallback when not).
@@ -82,9 +83,9 @@ cd SuperWorkbench
 python start.py
 ```
 
-On Windows, double-click `Start-SuperWorkbench.cmd`; on macOS / Linux, run `./start.sh`.
+On Windows, run `python start.py --create-shortcut` to create a Desktop icon or double-click `Start-SuperWorkbench.cmd`; on macOS / Linux, run `./start.sh`.
 
-The studio opens at **`http://127.0.0.1:8765`** (strictly bound to localhost by default).
+The studio opens in Desktop App Mode (or at **`http://127.0.0.1:8765`** with automatic session-token bootstrap, strictly bound to localhost by default). See [CHANGELOG.md](CHANGELOG.md) for release notes.
 
 ### Environment Variables (Optional)
 
@@ -103,10 +104,16 @@ SuperWorkbench/
 ├── start.py                     # Cross-platform launcher
 ├── start.sh                     # macOS / Linux launcher
 ├── Start-SuperWorkbench.cmd     # Windows one-click launcher
-├── skills/                      # Built-in starter SKILL.md packs
+├── skills/                      # 9 built-in starter SKILL.md packs
 │   ├── aigc-storyboard/
+│   ├── art-3d-pipeline/
+│   ├── bug-triage/
 │   ├── code-review-strict/
-│   └── git-commit-release/
+│   ├── deep-research/
+│   ├── doc-writer/
+│   ├── git-commit-release/
+│   ├── paper-study/
+│   └── security-audit/
 ├── tests/
 │   └── test_workbench.py        # Standard-library automated regression test suite
 └── workbench/

@@ -30,19 +30,20 @@
 ## 核心特性
 
 - **零重型依赖**：后端仅使用 Python 3 标准库，前端为零构建的模块化 `index.html + app.css + app.js`；无需 Docker、Redis、数据库或前端编译环境，下载即用。
-- **三角色自由协作（策划 → 执行 → 质检）**：
-  - 实时流式输出与可折叠的执行步骤 Trace，拒绝满屏日志噪音。
-  - 46px 极简纵向纸飞机交接微轨，一眼看清当前接力位置。
-  - **极简执行前审批门禁（可选）**：在 `Settings → 角色与引擎` 中一键开关；开启后「全自动流转」会在策划出方案后暂停，并在输入框上方浮出一条安静的单行确认栏，点击「批准执行」才开始动手改文件。
-- **多工作空间 & 同空间多对话 & 一键压缩上下文**：
-  - 支持 `通用研发`、`Web 前端`、`Python`、`AIGC 制片空间`、`Godot 游戏开发` 等多种空间预设，互不干扰。
-  - 每个工作空间支持建立多个独立对话线程，长对话可一键浓缩为长期记忆摘要，自动注入后续每轮上下文。
+- **按工作空间独立阵容 & 5 大场景智能排班**：
+  - 实时流式输出、可折叠执行步骤 Trace 与 46px 纵向纸飞机交接微轨。
+  - **每个空间独立记住自己的班子**：点击输入框旁「切换阵容」，1 键切换 **代码重活 / 视频 Vibe / 美术与 3D 建模 / 论文与深度学习 / 安全审计**，不影响其他空间，并提供按需自选的推荐技能引导条与 JSON 预设导入导出。
+  - **真实模型简写头像**：按你实际配置的模型简写显示头像（`GPT`、`CLD`、`GEM`、`DS`、`QWN`、`DSH` 等），绝不伪造未安装的 CLI。
+  - **极简执行前审批门禁（可选）**：开启后在策划出方案后暂停，批准后才动手改文件。
+- **多工作空间 & 同空间多对话 & 多轮记忆**：
+  - 支持 `通用研发`、`Web 前端`、`Python`、`AIGC 制片空间`、`Godot 游戏开发`（*实验性，当前针对特定轮次测试约定*）等空间预设，互不干扰。
+  - 按工作空间严格隔离聊天历史与单调唯一消息 ID，自动向所有本地 CLI 通道注入同线程上下文与压缩记忆摘要。
 - **Codex / AGY 风格 `+` 多模态输入框**：
   - 点击 `+` 即可上传图片、本地文件或挂载 `/技能`，支持 `Ctrl+V` 直接粘贴截图与拖拽上传。
 - **零门槛可视化 Settings 设置中心**：
-  - **技能（Skills）**：4 层自动发现（内置、工作台技能库、项目 `.agents/skills/` 以及只读读取本机 `~/.codex/skills`、`~/.gemini/antigravity/skills`、`~/.claude/skills`），零 YAML 表单新建，自动注入所有引擎。
-  - **外部工具（MCP）**：内置 Playwright 浏览器、GitHub、Figma、ComfyUI、本地目录等 1 键零 JSON 模板，并支持一键同步到本机已装的 `agy` / `codex` / `claude` CLI。
-  - **角色与引擎**：自动探测本机 CLI 与 Codex 模型列表，并提供左下角 1 秒快切模型弹窗；一键接入 Ollama、DeepSeek、OpenRouter 或自定义 CLI。
+  - **技能生态（9 个内置精选技能）**：4 层自动发现（内置、工作台技能库、项目 `.agents/skills/` 以及只读读取本机 `~/.codex`、`~/.gemini/antigravity`、`~/.gemini`、`~/.claude`、`~/.dsh`），支持分类与标签搜索、安全的 **从 GitHub 导入（先预览全文再确认安装）** 与一键导出 `SKILL.md`。
+  - **外部工具（MCP）**：内置 Playwright、GitHub、Figma、ComfyUI、**Blender 3D 建模**、本地目录等 1 键零 JSON 模板，并支持一键同步到本机已装的 `agy` / `codex` / `claude` CLI。
+  - **角色与引擎**：`--doctor` 自动探测本机 CLI 版本与 Codex 模型列表；一键接入 Ollama、DeepSeek、OpenRouter 或自定义 CLI。
 - **可折叠右侧 Inspector 抽屉**（默认收起，保持画布纯净）：
   - **终端日志**：完整 CLI 实时输出，带智能滚动锁（上翻查看历史时绝不强制拽回底部）。
   - **Live Git Diff 与源码审查**：有 Git 时展示分支、变更文件与红绿 Diff；无 Git 时自动降级为带行号的源码预览。
@@ -82,9 +83,9 @@ cd SuperWorkbench
 python start.py
 ```
 
-Windows 用户可直接双击 `Start-SuperWorkbench.cmd`，macOS / Linux 用户可执行 `./start.sh`。
+Windows 用户可先运行 `python start.py --create-shortcut` 一键创建桌面图标，或直接双击 `Start-SuperWorkbench.cmd`；macOS / Linux 用户可执行 `./start.sh`。
 
-启动后浏览器访问 **`http://127.0.0.1:8765`**（默认仅监听本机回环地址）。
+启动后会自动以独立桌面窗口打开（附带本地会话凭证，默认仅监听本机回环地址）。完整更新日志见 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
 
