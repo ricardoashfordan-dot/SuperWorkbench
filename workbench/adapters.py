@@ -17,6 +17,7 @@ MAX_DISCOVERED_MODELS = 50
 MAX_MODEL_ID_LEN = 120
 MAX_CACHE_BYTES = 2 * 1024 * 1024
 ROLE_SLOTS = ("planner", "builder", "reviewer")
+MAX_ROLES = 8
 ROLE_FIELD_LIMITS = {"engine": 120, "model": 120, "effort": 32, "label": 64,
                      "aigc_label": 64, "custom_label": 24, "system_prompt": 2000}
 _ROLES_LOCK = threading.RLock()
@@ -566,7 +567,7 @@ def _default_roles(available: dict) -> dict:
     efforts = ("high", available.get("codex", {}).get("default_effort", "high"), "medium")
     return {
         slot: {
-            "id": slot, "label": label, "aigc_label": aigc_label,
+            "id": slot, "label": label, "aigc_label": aigc_label, "builtin": True,
             "custom_label": "", "system_prompt": "", "effort": effort,
             **_binding(_pick_engine(preferred, available)),
         }
@@ -602,28 +603,86 @@ def _merge_role(role: dict, patch: object) -> dict:
     return {**role, **fields}
 
 
+def is_custom_role_id(value: object) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"role-[a-z0-9][a-z0-9_-]{0,47}", value) is not None
+
+
+def _roster_scope(saved: dict, ws_id: str | None) -> dict | None:
+    if ws_id is None:
+        return saved
+    value = _workspace_map(saved).get(ws_id)
+    return value if isinstance(value, dict) else None
+
+
+def _roster_structure(saved: dict, scope: dict) -> tuple[dict, list[str]]:
+    raw_custom = scope.get("custom_roles", saved.get("custom_roles", {}))
+    customs = {}
+    if isinstance(raw_custom, dict):
+        customs = {
+            id_: fields for id_, fields in raw_custom.items()
+            if is_custom_role_id(id_) and isinstance(fields, dict)
+        }
+        customs = dict(list(customs.items())[:MAX_ROLES - len(ROLE_SLOTS)])
+    ids = [*ROLE_SLOTS, *customs]
+    raw_order = scope.get("roster_order", saved.get("roster_order"))
+    order = list(dict.fromkeys(id_ for id_ in raw_order if isinstance(id_, str) and id_ in ids)) if isinstance(raw_order, list) else []
+    return customs, order or ids
+
+
+def _editable_roster_scope(saved: dict, ws_id: str | None) -> dict:
+    scope = _roster_scope(saved, ws_id)
+    if scope is None:
+        workspaces = _workspace_map(saved)
+        saved["workspaces"] = workspaces
+        scope = workspaces[ws_id] = {}
+    return scope
+
+
+def _resolve_role_binding(role: dict, fallback: dict, available: dict) -> dict:
+    if role["engine"] and role["engine"] not in available:
+        role = {**role, "engine": fallback["engine"], "model": fallback["model"]}
+    if not role["engine"]:
+        role = {**role, "model": ""}
+    return role
+
+
+def _custom_role_defaults(role_id: str, available: dict) -> dict:
+    label = role_id.removeprefix("role-")
+    return {
+        "id": role_id, "builtin": False, "label": label, "aigc_label": label,
+        "system_prompt": "", "custom_label": "", "effort": "high",
+        **_binding(_pick_engine((), available)),
+    }
+
+
 def get_workspace_roster(ws_id: str | None = None, *, engines: list[dict] | None = None) -> dict:
     available = _available_engines(list_all_engines() if engines is None else engines)
     with _ROLES_LOCK:
         saved = _read_saved_roles()
-    override = _workspace_map(saved).get(ws_id)
-    scene = override.get("scene", "") if isinstance(override, dict) else ""
+    override = _roster_scope(saved, ws_id) if ws_id is not None else None
+    customs, order = _roster_structure(saved, override if override is not None else saved)
+    scene = override.get("scene", "") if override is not None else ""
     if not isinstance(scene, str) or scene not in SCENE_PRESETS:
         scene = ""
     fallback = _scene_roles(scene, available) if scene else _default_roles(available)
     roles = {}
     for slot, default in _default_roles(available).items():
         role = _merge_role(default, saved.get(slot))
-        if isinstance(override, dict):
+        if override is not None:
             role = _merge_role(role, override.get(slot))
-        if role["engine"] and role["engine"] not in available:
-            role.update(engine=fallback[slot]["engine"], model=fallback[slot]["model"])
-        if not role["engine"]:
-            role["model"] = ""
-        roles[slot] = _with_badge(role, available)
+        roles[slot] = _resolve_role_binding(role, fallback[slot], available)
+    for id_, fields in customs.items():
+        default = _custom_role_defaults(id_, available)
+        roles[id_] = _resolve_role_binding(_merge_role(default, fields), default, available)
+    positions = {id_: position for position, id_ in enumerate(order)}
+    roles = {
+        id_: _with_badge({**role, "enabled": id_ in positions, "order": positions.get(id_)}, available)
+        for id_, role in roles.items()
+    }
     return {
         "roles": roles, "active_scene": scene,
-        "roles_scope": "workspace" if isinstance(override, dict) else "global",
+        "roster": [roles[id_] for id_ in order], "roster_order": order,
+        "roles_scope": "workspace" if override is not None else "global",
         "recommended_skills": list(SCENE_PRESETS[scene]["skills"]) if scene else [],
     }
 
@@ -649,23 +708,140 @@ def _write_saved_roles(saved: dict) -> None:
 def save_role_bindings(data: dict, ws_id: str | None = None, *, scene: str | None = None) -> None:
     if scene is not None and (not isinstance(scene, str) or (scene and scene not in SCENE_PRESETS)):
         raise ValueError("未知的阵容场景")
-    updates = {slot: fields for slot in ROLE_SLOTS if (fields := _role_fields(data.get(slot)))}
-    if not updates and scene is None:
-        return
     with _ROLES_LOCK:
         saved = _read_saved_roles()
-        target = saved
-        if ws_id is not None:
-            workspaces = _workspace_map(saved)
-            saved["workspaces"] = workspaces
-            entry = workspaces.get(ws_id)
-            target = entry if isinstance(entry, dict) else {}
-            workspaces[ws_id] = target
-            if scene is not None:
-                target["scene"] = scene
+        target = _editable_roster_scope(saved, ws_id)
+        customs, order = _roster_structure(saved, target)
+        updates = {}
+        enabled_updates = {}
+        for id_, raw in data.items():
+            if id_ not in (*ROLE_SLOTS, *customs):
+                if is_custom_role_id(id_):
+                    raise ValueError("角色不属于当前阵容")
+                continue
+            if not isinstance(raw, dict):
+                continue
+            if "enabled" in raw:
+                if type(raw["enabled"]) is not bool:
+                    raise ValueError("enabled 必须是布尔值")
+                enabled_updates[id_] = raw["enabled"]
+            if fields := _role_fields(raw):
+                if id_ in customs:
+                    fields.pop("label", None)
+                    fields.pop("aigc_label", None)
+                updates[id_] = fields
+        if not updates and not enabled_updates and scene is None:
+            return
+        if ws_id is not None and scene is not None:
+            target["scene"] = scene
+        custom_changed = False
         for slot, fields in updates.items():
-            target[slot] = _merge_role(_role_fields(target.get(slot)), fields)
+            destination = customs if slot in customs else target
+            destination[slot] = _merge_role(_role_fields(destination.get(slot)), fields)
+            custom_changed |= slot in customs
+        if enabled_updates:
+            order = [id_ for id_ in order if enabled_updates.get(id_, True)]
+            order.extend(id_ for id_, enabled in enabled_updates.items() if enabled and id_ not in order)
+            if not order:
+                raise ValueError("至少保留一个已启用角色")
+        if custom_changed or enabled_updates:
+            target.update(custom_roles=customs, roster_order=order)
         _write_saved_roles(saved)
+
+
+def _validate_role_fields(raw: object, *, custom: bool = False, allow_enabled: bool = False) -> dict:
+    allowed = set(ROLE_FIELD_LIMITS)
+    if allow_enabled:
+        allowed.add("enabled")
+    if not isinstance(raw, dict) or set(raw) - allowed:
+        raise ValueError("角色含有未知字段")
+    fields = {}
+    for key, value in raw.items():
+        if key == "enabled":
+            if type(value) is not bool:
+                raise ValueError("enabled 必须是布尔值")
+            fields[key] = value
+            continue
+        limit = 24 if custom and key == "label" else ROLE_FIELD_LIMITS[key]
+        if not isinstance(value, str) or len(value) > limit or "\0" in value:
+            raise ValueError(f"角色的 {key} 类型或长度无效")
+        fields[key] = value.strip()
+    if custom and not fields.get("label"):
+        raise ValueError("自定义角色名称必须为 1–24 字")
+    return fields
+
+
+def add_custom_role(
+    ws_id: str | None, *, label: str, engine: str = "", model: str = "", effort: str = "high",
+    system_prompt: str = "", insert_before: str | None = "reviewer",
+) -> dict:
+    fields = _validate_role_fields(
+        dict(label=label, engine=engine, model=model, effort=effort, system_prompt=system_prompt), custom=True,
+    )
+    engines = list_all_engines()
+    available = _available_engines(engines)
+    if fields["engine"] and fields["engine"] not in available:
+        raise ValueError("角色引擎不可用")
+    binding = _binding(available.get(fields["engine"]) or _pick_engine((), available))
+    fields["engine"] = binding["engine"]
+    fields["model"] = (fields["model"] or binding["model"]) if fields["engine"] else ""
+    fields["aigc_label"] = fields["label"]
+    with _ROLES_LOCK:
+        saved = _read_saved_roles()
+        target = _editable_roster_scope(saved, ws_id)
+        customs, order = _roster_structure(saved, target)
+        if len(customs) + len(ROLE_SLOTS) >= MAX_ROLES:
+            raise ValueError("一个阵容最多可保存 8 个角色")
+        if insert_before is not None and (not isinstance(insert_before, str) or insert_before not in (*ROLE_SLOTS, *customs)):
+            raise ValueError("插入位置不属于当前阵容")
+        base = re.sub(r"[^a-z0-9_-]+", "-", fields["label"].lower()).strip("-_")[:36] or "expert"
+        role_id = f"role-{base}"
+        suffix = 2
+        while role_id in customs:
+            role_id = f"role-{base}-{suffix}"
+            suffix += 1
+        customs[role_id] = fields
+        position = order.index(insert_before) if insert_before in order else len(order)
+        order.insert(position, role_id)
+        target.update(custom_roles=customs, roster_order=order)
+        _write_saved_roles(saved)
+        return get_workspace_roster(ws_id, engines=engines)["roles"][role_id]
+
+
+def delete_custom_role(ws_id: str | None, role_id: str) -> dict:
+    with _ROLES_LOCK:
+        saved = _read_saved_roles()
+        target = _editable_roster_scope(saved, ws_id)
+        customs, order = _roster_structure(saved, target)
+        if not is_custom_role_id(role_id) or role_id not in customs:
+            raise ValueError("只能删除当前阵容中的自定义角色")
+        del customs[role_id]
+        order = [id_ for id_ in order if id_ != role_id]
+        if not order:
+            raise ValueError("至少保留一个已启用角色")
+        target.update(custom_roles=customs, roster_order=order)
+        _write_saved_roles(saved)
+    return get_workspace_roster(ws_id)
+
+
+def _validate_order(order: object, enabled: list[str]) -> list[str]:
+    if (
+        not isinstance(order, list) or not 1 <= len(order) <= MAX_ROLES
+        or any(not isinstance(id_, str) for id_ in order)
+        or len(order) != len(enabled) or set(order) != set(enabled)
+    ):
+        raise ValueError("排序必须是已启用角色 ID 的完整排列")
+    return order
+
+
+def reorder_roles(ws_id: str | None, order: list[str]) -> dict:
+    with _ROLES_LOCK:
+        saved = _read_saved_roles()
+        target = _editable_roster_scope(saved, ws_id)
+        customs, current = _roster_structure(saved, target)
+        target.update(custom_roles=customs, roster_order=_validate_order(order, current))
+        _write_saved_roles(saved)
+    return get_workspace_roster(ws_id)
 
 
 def reset_workspace_roles(ws_id: str) -> dict:
@@ -717,19 +893,29 @@ def recommend_workspace_roster(scene_id: str, ws_id: str | None = None) -> dict:
 
 def export_roster_preset(ws_id: str) -> dict:
     roster = get_workspace_roster(ws_id)
-    return {
+    preset = {
         "version": 1, "scene": roster["active_scene"],
         "roles": {slot: _role_fields(role) for slot, role in roster["roles"].items()},
         "recommended_skills": roster["recommended_skills"],
     }
+    if set(roster["roles"]) != set(ROLE_SLOTS) or roster["roster_order"] != list(ROLE_SLOTS):
+        preset.update(version=2, roster_order=roster["roster_order"])
+        for slot, role in roster["roles"].items():
+            preset["roles"][slot]["enabled"] = role["enabled"]
+    return preset
 
 
 def import_roster_preset(preset: object, ws_id: str) -> dict:
-    if not isinstance(preset, dict) or set(preset) - {"version", "scene", "roles", "recommended_skills"}:
+    if not isinstance(preset, dict):
         raise ValueError("阵容预设必须是 JSON 对象，且只能包含预设字段")
     version = preset.get("version", 1)
-    if type(version) is not int or version != 1:
+    if type(version) is not int or version not in (1, 2):
         raise ValueError("不支持该阵容预设版本")
+    permitted = {"version", "scene", "roles", "recommended_skills"}
+    if version == 2:
+        permitted.add("roster_order")
+    if set(preset) - permitted:
+        raise ValueError("阵容预设含有未知字段")
     scene = preset.get("scene", "")
     if not isinstance(scene, str) or (scene and scene not in SCENE_PRESETS):
         raise ValueError("未知的阵容场景")
@@ -739,24 +925,29 @@ def import_roster_preset(preset: object, ws_id: str) -> dict:
     ):
         raise ValueError("推荐技能必须是有效的技能 slug 列表")
     raw_roles = preset.get("roles")
-    if not isinstance(raw_roles, dict) or set(raw_roles) != set(ROLE_SLOTS):
+    if not isinstance(raw_roles, dict) or not set(ROLE_SLOTS).issubset(raw_roles):
         raise ValueError("阵容预设必须包含策划、执行和质检角色")
+    custom_ids = set(raw_roles) - set(ROLE_SLOTS)
+    if len(raw_roles) > MAX_ROLES or any(not is_custom_role_id(id_) for id_ in custom_ids) or (version == 1 and custom_ids):
+        raise ValueError("阵容角色 ID 无效或超过 8 个")
     available = _available_engines(list_all_engines())
     defaults = _scene_roles(scene, available) if scene else _default_roles(available)
     roles = {}
+    enabled = []
     for slot, raw in raw_roles.items():
-        if not isinstance(raw, dict) or set(raw) - ROLE_FIELD_LIMITS.keys():
-            raise ValueError(f"角色 {slot} 含有未知字段")
-        for key, value in raw.items():
-            if not isinstance(value, str) or len(value) > ROLE_FIELD_LIMITS[key] or "\0" in value:
-                raise ValueError(f"角色 {slot} 的 {key} 类型或长度无效")
-        role = _merge_role(defaults[slot], {key: value.strip() for key, value in raw.items()})
-        if role["engine"] and role["engine"] not in available:
-            role.update(engine=defaults[slot]["engine"], model=defaults[slot]["model"])
-        if not role["engine"]:
-            role["model"] = ""
-        roles[slot] = role
-    save_role_bindings(roles, ws_id, scene=scene)
+        fields = _validate_role_fields(raw, custom=slot in custom_ids, allow_enabled=version == 2)
+        if fields.pop("enabled", True):
+            enabled.append(slot)
+        default = _custom_role_defaults(slot, available) if slot in custom_ids else defaults[slot]
+        role = _resolve_role_binding(_merge_role(default, fields), default, available)
+        roles[slot] = _role_fields(role)
+    order = list(ROLE_SLOTS) if version == 1 else _validate_order(preset.get("roster_order"), enabled)
+    with _ROLES_LOCK:
+        saved = _read_saved_roles()
+        target = _editable_roster_scope(saved, ws_id)
+        target.update({slot: roles[slot] for slot in ROLE_SLOTS})
+        target.update(scene=scene, custom_roles={slot: roles[slot] for slot in roles if slot in custom_ids}, roster_order=order)
+        _write_saved_roles(saved)
     return get_workspace_roster(ws_id)
 
 

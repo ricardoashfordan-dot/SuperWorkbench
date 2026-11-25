@@ -10,12 +10,21 @@
   } catch (e) {}
 })();
 
-const RAIL_Y = { xiu: 30, agy: 106, codex: 182, dsh: 258 };
+let RAIL_Y = { xiu: 30, agy: 106, codex: 182, dsh: 258 };
+const CUSTOM_ROLE_COLORS = ["#a78bfa", "#f59e0b", "#ec4899", "#38bdf8", "#34d399"];
+const SLOT_TO_NODE_ID = { planner: "agy", builder: "codex", reviewer: "dsh" };
+function slotToNodeId(slotId) { return SLOT_TO_NODE_ID[slotId] || slotId; }
+function roleAccentColor(slotId, idx = 0) {
+  if (slotId === "planner" || slotId === "agy") return "var(--c-agy)";
+  if (slotId === "builder" || slotId === "codex") return "var(--c-codex)";
+  if (slotId === "reviewer" || slotId === "dsh") return "var(--c-dsh)";
+  return CUSTOM_ROLE_COLORS[idx % CUSTOM_ROLE_COLORS.length];
+}
 const ROLE_INFO = {
   xiu: { name: "我", role: "发起人" },
-  agy: { name: "Antigravity", role: "策划 · 审计" },
-  codex: { name: "Codex", role: "核心主程" },
-  dsh: { name: "DSH", role: "独立质检" }
+  agy: { name: "策划", role: "" },
+  codex: { name: "执行", role: "" },
+  dsh: { name: "质检", role: "" }
 };
 
 let currentMode = "agy";
@@ -896,6 +905,7 @@ function renderAttachedSkills() {
 }
 
 let lastRosterReason = "";
+let rosterAddOpen = false;
 
 function toggleRosterPopover(force) {
   const pop = document.getElementById("rosterPopover");
@@ -906,7 +916,14 @@ function toggleRosterPopover(force) {
     togglePlusMenu(false);
     toggleSlashMenu(false);
     renderRosterPopover();
+  } else {
+    rosterAddOpen = false;
   }
+}
+
+function toggleRosterAddForm(force) {
+  rosterAddOpen = force !== undefined ? force : !rosterAddOpen;
+  renderRosterPopover();
 }
 
 function renderRosterPopover() {
@@ -916,27 +933,33 @@ function renderRosterPopover() {
   const scenes = latestSnap.scenes || [];
   const activeScene = latestSnap.active_scene || "";
   const scope = latestSnap.roles_scope || "global";
-  const roles = latestSnap.roles || {};
+  const rolesDict = latestSnap.roles || {};
+  const roster = Array.isArray(latestSnap.roster) && latestSnap.roster.length
+    ? latestSnap.roster
+    : ["planner", "builder", "reviewer"].map(id => rolesDict[id]).filter(Boolean);
+  const totalRoleCount = Object.keys(rolesDict).length || roster.length;
+  const canAddMore = totalRoleCount < 8;
   const engines = latestSnap.engines || [];
   const readyEngines = engines.filter(e => e.ready);
   const recSlugs = latestSnap.recommended_skills || [];
   const skillsList = latestSnap.skills || [];
   const skillBySlug = Object.fromEntries(skillsList.map(s => [s.slug, s]));
+  const isAigc = latestSnap.active_workspace?.type === "aigc-studio";
 
   const sceneBtns = scenes.map(sc => {
     const lbl = currentLang === "en" ? sc.label_en : sc.label_zh;
     return `<button class="roster-scene-btn ${activeScene === sc.id ? 'active' : ''}" data-scene="${escapeHtml(sc.id)}" onclick="applyWorkspaceScene(this.dataset.scene)">${escapeHtml(lbl)}</button>`;
   }).join("");
 
-  const slotDefs = [
-    { id: "planner", node: "agy", fallback: t("策划", "Plan") },
-    { id: "builder", node: "codex", fallback: t("执行", "Build") },
-    { id: "reviewer", node: "dsh", fallback: t("质检", "Review") }
-  ];
+  const fallbackLabel = (id) => {
+    if (id === "planner") return isAigc ? t("编剧", "Script") : t("策划", "Plan");
+    if (id === "builder") return isAigc ? t("制片", "Produce") : t("执行", "Build");
+    if (id === "reviewer") return isAigc ? t("审片", "Review") : t("质检", "Review");
+    return id;
+  };
 
-  const rowsHtml = slotDefs.map(sd => {
-    const r = roles[sd.id] || {};
-    const label = (r.custom_label || "").trim() || sd.fallback;
+  const rowsHtml = roster.map((r, idx) => {
+    const label = (r.custom_label || "").trim() || (r.label || "").trim() || fallbackLabel(r.id);
     const badge = r.badge || t("未配", "—");
     const opts = [
       `<option value="" ${!r.engine ? 'selected' : ''}>${t("未配置引擎", "Unconfigured")}</option>`,
@@ -946,15 +969,41 @@ function renderRosterPopover() {
         return `<option value="${escapeHtml(e.id)}" ${e.id === r.engine ? 'selected' : ''}>${escapeHtml(e.name)}${escapeHtml(hint)}</option>`;
       })
     ].join("");
+    const delBtn = !r.builtin
+      ? `<button class="roster-mini-btn del" title="${t("删除自定义角色", "Delete custom role")}" data-rid="${escapeHtml(r.id)}" onclick="deleteCustomRole(this.dataset.rid)">&times;</button>`
+      : "";
     return `
       <div class="roster-row">
-        <div class="roster-row-lbl">
+        <div class="roster-row-lbl" title="${escapeHtml(label)}">
           <span class="agent-badge">${escapeHtml(badge)}</span>
           <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(label)}</span>
         </div>
-        <select onchange="quickChangeRosterEngine('${sd.id}', this.value)">${opts}</select>
+        <select data-rid="${escapeHtml(r.id)}" onchange="quickChangeRosterEngine(this.dataset.rid, this.value)">${opts}</select>
+        <div class="roster-row-acts">
+          <button class="roster-mini-btn" title="${t("上移接力顺序", "Move earlier")}" ${idx === 0 ? "disabled" : ""} data-rid="${escapeHtml(r.id)}" onclick="moveRosterRole(this.dataset.rid, -1)">↑</button>
+          <button class="roster-mini-btn" title="${t("下移接力顺序", "Move later")}" ${idx === roster.length - 1 ? "disabled" : ""} data-rid="${escapeHtml(r.id)}" onclick="moveRosterRole(this.dataset.rid, 1)">↓</button>
+          ${delBtn}
+        </div>
       </div>`;
   }).join("");
+
+  const addEngineOpts = [
+    `<option value="">${t("自动选择本机可用引擎", "Auto-pick available engine")}</option>`,
+    ...readyEngines.map(e => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.name)}</option>`)
+  ].join("");
+
+  const addFormHtml = rosterAddOpen ? `
+    <div class="roster-add-box">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+        <input id="popAddRoleLabel" maxlength="24" placeholder="${t("专家角色名（如：安全审计官 / UI 设计师）", "Role name (e.g. Security Auditor / UI Designer)")}" />
+        <select id="popAddRoleEngine">${addEngineOpts}</select>
+      </div>
+      <textarea id="popAddRolePrompt" rows="2" maxlength="2000" placeholder="${t("可选：该角色的人设提示词（System Prompt）", "Optional: System prompt for this specialist role")}"></textarea>
+      <div style="display:flex;justify-content:flex-end;gap:6px;">
+        <button class="btn sm" onclick="toggleRosterAddForm(false)">${t("取消", "Cancel")}</button>
+        <button class="btn sm solid" onclick="submitAddCustomRole('popover')">${t("添加到本空间", "Add Role")}</button>
+      </div>
+    </div>` : "";
 
   const recHtml = recSlugs.length ? (() => {
     const chips = recSlugs.map(slug => {
@@ -969,10 +1018,11 @@ function renderRosterPopover() {
   pop.innerHTML = `
     <div class="roster-head">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-        <strong style="font-size:13px;">${escapeHtml(wsName)} · ${t("本空间阵容", "Workspace Roster")}</strong>
+        <strong style="font-size:13px;">${escapeHtml(wsName)} · ${t("本空间阵容", "Workspace Roster")} (${roster.length}/8)</strong>
         <span class="skill-src">${scope === "workspace" ? t("本空间独立", "Workspace Override") : t("继承全局", "Global Default")}</span>
       </div>
       <div style="display:flex;align-items:center;gap:6px;">
+        ${canAddMore ? `<button class="btn sm" onclick="toggleRosterAddForm()">${t("+ 添加专家角色", "+ Add Role")}</button>` : ""}
         ${scope === "workspace" ? `<button class="btn sm" onclick="resetWorkspaceRoster()">${t("恢复全局", "Reset")}</button>` : ""}
         <button class="icon-btn" style="width:24px;height:24px;" onclick="toggleRosterPopover(false)">&times;</button>
       </div>
@@ -982,6 +1032,7 @@ function renderRosterPopover() {
       <div class="roster-scenes">${sceneBtns}</div>
     </div>
     ${lastRosterReason ? `<div class="roster-reason">${escapeHtml(lastRosterReason)}</div>` : ""}
+    ${addFormHtml}
     <div class="roster-rows">${rowsHtml}</div>
     ${recHtml}
     <div class="roster-foot">
@@ -991,6 +1042,54 @@ function renderRosterPopover() {
       </div>
       <button class="btn sm" onclick="toggleRosterPopover(false); openStudioModal('roles');">${t("高级人设与模型…", "Advanced Roles…")}</button>
     </div>`;
+}
+
+async function submitAddCustomRole(source = "popover") {
+  const lblId = source === "popover" ? "popAddRoleLabel" : "modalAddRoleLabel";
+  const engId = source === "popover" ? "popAddRoleEngine" : "modalAddRoleEngine";
+  const prmId = source === "popover" ? "popAddRolePrompt" : "modalAddRolePrompt";
+  const label = (document.getElementById(lblId)?.value || "").trim();
+  const engine = (document.getElementById(engId)?.value || "").trim();
+  const system_prompt = (document.getElementById(prmId)?.value || "").trim();
+  if (!label) { showToast(t("请填写角色名称", "Please enter a role name")); return; }
+  try {
+    const res = await api("/api/roles", {
+      action: "add_role", scope: "workspace", label, engine, system_prompt
+    });
+    rosterAddOpen = false;
+    lastChatSig = "";
+    render(res.snapshot, true);
+    renderRosterPopover();
+    renderStudioModal();
+    showToast(t(`已添加专家角色：${label}`, `Added role: ${label}`));
+  } catch (e) { showToast(e.message); }
+}
+
+async function deleteCustomRole(roleId) {
+  if (!confirm(t("确定移除该自定义角色？", "Remove this custom role?"))) return;
+  try {
+    const res = await api("/api/roles", { action: "delete_role", scope: "workspace", role_id: roleId });
+    lastChatSig = "";
+    render(res.snapshot, true);
+    renderRosterPopover();
+    renderStudioModal();
+    showToast(t("已移除自定义角色", "Custom role removed"));
+  } catch (e) { showToast(e.message); }
+}
+
+async function moveRosterRole(roleId, delta) {
+  const order = [...(latestSnap?.roster_order || (latestSnap?.roster || []).map(r => r.id))];
+  const idx = order.indexOf(roleId);
+  const nextIdx = idx + delta;
+  if (idx < 0 || nextIdx < 0 || nextIdx >= order.length) return;
+  [order[idx], order[nextIdx]] = [order[nextIdx], order[idx]];
+  try {
+    const res = await api("/api/roles", { action: "reorder_roles", scope: "workspace", order });
+    lastChatSig = "";
+    render(res.snapshot, true);
+    renderRosterPopover();
+    renderStudioModal();
+  } catch (e) { showToast(e.message); }
 }
 
 async function applyWorkspaceScene(sceneId) {
@@ -1103,11 +1202,29 @@ function renderStudioModal() {
   const engines = latestSnap.engines || [];
   const engMap = Object.fromEntries(engines.map(e => [e.id, e]));
 
-  const slotMeta = [
-    { id: "planner", title: t("1. 策划 / 方案（AIGC：编剧与分镜）", "1. Planner / Architecture (AIGC: Script & Storyboard)"), hint: t("负责思考讨论，CLI 或纯 API 均可", "Brainstorming & planning — works with CLI or pure API") },
-    { id: "builder", title: t("2. 核心执行（AIGC：制片与剪辑）", "2. Core Builder (AIGC: Production & Editing)"), hint: t("负责改代码跑命令，推荐绑定本地 CLI", "Edits files & runs commands — local CLI recommended") },
-    { id: "reviewer", title: t("3. 独立质检（AIGC：审片与检查）", "3. Independent Reviewer (AIGC: Screening & QA)"), hint: t("负责审查把关，CLI 或纯 API 均可", "Read-only verification & review — CLI or pure API") }
+  const builtinMeta = {
+    planner: { title: t("策划 / 方案（AIGC：编剧与分镜）", "Planner / Architecture (AIGC: Script & Storyboard)"), hint: t("负责思考讨论，CLI 或纯 API 均可", "Brainstorming & planning — works with CLI or pure API") },
+    builder: { title: t("核心执行（AIGC：制片与剪辑）", "Core Builder (AIGC: Production & Editing)"), hint: t("负责改代码跑命令，推荐绑定本地 CLI", "Edits files & runs commands — local CLI recommended") },
+    reviewer: { title: t("独立质检（AIGC：审片与检查）", "Independent Reviewer (AIGC: Screening & QA)"), hint: t("负责审查把关，CLI 或纯 API 均可", "Read-only verification & review — CLI or pure API") }
+  };
+
+  const activeOrder = latestSnap.roster_order || (latestSnap.roster || []).map(r => r.id);
+  const orderedIds = [
+    ...activeOrder.filter(id => roles[id]),
+    ...Object.keys(roles).filter(id => !activeOrder.includes(id))
   ];
+  const slotMeta = orderedIds.map((id, idx) => {
+    const r = roles[id] || {};
+    const bm = builtinMeta[id];
+    return {
+      id,
+      builtin: r.builtin !== false && Boolean(bm),
+      enabled: r.enabled !== false,
+      activeIdx: activeOrder.indexOf(id),
+      title: bm ? `${idx + 1}. ${bm.title}` : `${idx + 1}. ${(r.custom_label || r.label || id)} (${t("自定义专家", "Custom Specialist")})`,
+      hint: bm ? bm.hint : t("自定义角色 · 可自由排序或删除", "Custom role · reorder or delete anytime")
+    };
+  });
 
   const readyOpts = engines.filter(e => e.ready);
   const notReadyOpts = engines.filter(e => !e.ready);
@@ -1117,10 +1234,26 @@ function renderStudioModal() {
   const isWsScope = latestSnap.roles_scope === "workspace";
   if (scopeBadge) {
     scopeBadge.textContent = isWsScope
-      ? t("当前状态：本空间独立阵容（不影响其他空间）", "Scope: Workspace Override (isolated from other workspaces)")
-      : t("当前状态：继承全局默认阵容", "Scope: Inheriting Global Default Roster");
+      ? t(`当前状态：本空间独立阵容（${activeOrder.length}/8 个启用角色）`, `Scope: Workspace Override (${activeOrder.length}/8 active roles)`)
+      : t(`当前状态：继承全局默认阵容（${activeOrder.length}/8 个启用角色）`, `Scope: Global Default (${activeOrder.length}/8 active roles)`);
   }
   if (resetBtn) resetBtn.style.display = isWsScope ? "inline-flex" : "none";
+
+  const modalAddHtml = Object.keys(roles).length < 8 ? `
+    <div class="insp-card" style="border-style:dashed;">
+      <div class="insp-card-title">${t("+ 添加自定义专家角色（最多 8 个角色参与接力）", "+ Add Custom Specialist Role (up to 8 roles)")}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <input id="modalAddRoleLabel" maxlength="24" placeholder="${t("角色名（如：安全审计官 / UI 设计师 / 论文审稿人）", "Role name (e.g. Security Auditor / UI Designer)")}" />
+        <select id="modalAddRoleEngine">
+          <option value="">${t("自动选择本机可用引擎", "Auto-pick available engine")}</option>
+          ${readyOpts.map(e => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.name)}</option>`).join("")}
+        </select>
+      </div>
+      <textarea id="modalAddRolePrompt" rows="2" maxlength="2000" style="width:100%;background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;padding:7px 9px;color:var(--text);font-family:inherit;font-size:12px;resize:vertical;" placeholder="${t("可选：该角色的人设与职责提示词（System Prompt）", "Optional: System prompt for this role")}"></textarea>
+      <div style="display:flex;justify-content:flex-end;">
+        <button class="btn sm solid" type="button" onclick="submitAddCustomRole('modal')">${t("添加到当前空间", "Add to Workspace")}</button>
+      </div>
+    </div>` : "";
 
   document.getElementById("roleSlotsContainer").innerHTML = slotMeta.map(s => {
     const r = roles[s.id] || {};
@@ -1138,10 +1271,10 @@ function renderStudioModal() {
     const models = curEng.models || [];
     const hasCurInList = models.some(m => m.id === curModel);
     const modelControl = !r.engine
-      ? `<input id="slot-model-${s.id}" value="" disabled placeholder="${t("请先选择引擎", "Select an engine first")}" />`
+      ? `<input id="slot-model-${escapeHtml(s.id)}" value="" disabled placeholder="${t("请先选择引擎", "Select an engine first")}" />`
       : (curEng.kind === "openai-compat" || models.length <= 1)
-        ? `<input id="slot-model-${s.id}" value="${escapeHtml(curModel)}" placeholder="${t("输入模型名称", "Enter model name")}" />`
-        : `<select id="slot-model-${s.id}">
+        ? `<input id="slot-model-${escapeHtml(s.id)}" value="${escapeHtml(curModel)}" placeholder="${t("输入模型名称", "Enter model name")}" />`
+        : `<select id="slot-model-${escapeHtml(s.id)}">
             ${!hasCurInList && curModel ? `<option value="${escapeHtml(curModel)}" selected>${escapeHtml(curModel)}</option>` : ""}
             ${models.map(m => `<option value="${escapeHtml(m.id)}" ${m.id === curModel ? 'selected' : ''}>${escapeHtml(m.label || m.id)}</option>`).join("")}
           </select>`;
@@ -1155,17 +1288,27 @@ function renderStudioModal() {
       : [["low","轻量"],["medium","均衡"],["high","深度"],["xhigh","极限"]];
 
     const hasCustomPersona = Boolean((r.custom_label || "").trim() || (r.system_prompt || "").trim());
+    const ctrlRight = `
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        ${s.builtin ? `<label style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--text-sec);cursor:pointer;"><input type="checkbox" id="slot-enabled-${escapeHtml(s.id)}" ${s.enabled ? "checked" : ""} />${t("启用", "Active")}</label>` : ""}
+        ${s.activeIdx >= 0 ? `<button class="roster-mini-btn" type="button" title="${t("上移", "Up")}" ${s.activeIdx === 0 ? "disabled" : ""} data-rid="${escapeHtml(s.id)}" onclick="moveRosterRole(this.dataset.rid, -1)">↑</button>
+        <button class="roster-mini-btn" type="button" title="${t("下移", "Down")}" ${s.activeIdx === activeOrder.length - 1 ? "disabled" : ""} data-rid="${escapeHtml(s.id)}" onclick="moveRosterRole(this.dataset.rid, 1)">↓</button>` : ""}
+        ${!s.builtin ? `<button class="roster-mini-btn del" type="button" title="${t("删除自定义角色", "Delete")}" data-rid="${escapeHtml(s.id)}" onclick="deleteCustomRole(this.dataset.rid)">&times;</button>` : ""}
+      </div>`;
 
     return `
-      <div class="insp-card">
+      <div class="insp-card" data-role-slot="${escapeHtml(s.id)}" style="${s.enabled ? '' : 'opacity:0.65;'}">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
-          <strong style="font-size:13px;">${s.title}</strong>
-          <span style="font-size:11px;color:var(--text-muted);">${s.hint}</span>
+          <div>
+            <strong style="font-size:13px;">${escapeHtml(s.title)}</strong>
+            <span style="font-size:11px;color:var(--text-muted);margin-left:6px;">${escapeHtml(s.hint)}</span>
+          </div>
+          ${ctrlRight}
         </div>
         <div style="display:grid;grid-template-columns:1.1fr 1.25fr ${curEng.supports_effort ? '0.8fr' : ''};gap:8px;">
           <div class="field">
             <label>${t("底层引擎", "Engine")}</label>
-            <select id="slot-eng-${s.id}" onchange="onSlotEngineChange('${s.id}')">${optHtml}</select>
+            <select id="slot-eng-${escapeHtml(s.id)}" data-rid="${escapeHtml(s.id)}" onchange="onSlotEngineChange(this.dataset.rid)">${optHtml}</select>
           </div>
           <div class="field">
             <label>${t("选择模型", "Model")}</label>
@@ -1174,7 +1317,7 @@ function renderStudioModal() {
           ${curEng.supports_effort ? `
           <div class="field">
             <label>${t("思考深度", "Reasoning Effort")}</label>
-            <select id="slot-effort-${s.id}">
+            <select id="slot-effort-${escapeHtml(s.id)}">
               ${effortList.map(([lv, nm]) => `<option value="${lv}" ${lv === (r.effort || 'high') ? 'selected' : ''}>${nm} (${lv})</option>`).join("")}
             </select>
           </div>` : ""}
@@ -1189,18 +1332,18 @@ function renderStudioModal() {
             <div style="display:flex;align-items:center;gap:8px;">
               <div class="field" style="flex:1;margin:0;">
                 <label>${t("自定义角色名（留空使用默认）", "Custom Role Name (optional)")}</label>
-                <input id="slot-clabel-${s.id}" maxlength="24" value="${escapeHtml(r.custom_label || "")}" placeholder="${t("例如：增长文案总监 / 安全审计官 / 分镜导演", "e.g. Growth Strategist / Security Auditor / Director")}" />
+                <input id="slot-clabel-${escapeHtml(s.id)}" maxlength="24" value="${escapeHtml(r.custom_label || "")}" placeholder="${t("例如：增长文案总监 / 安全审计官 / 分镜导演", "e.g. Growth Strategist / Security Auditor / Director")}" />
               </div>
-              <button class="btn sm" type="button" style="margin-top:16px;" onclick="resetRolePersona('${s.id}')">${t("恢复默认", "Reset")}</button>
+              <button class="btn sm" type="button" style="margin-top:16px;" data-rid="${escapeHtml(s.id)}" onclick="resetRolePersona(this.dataset.rid)">${t("恢复默认", "Reset")}</button>
             </div>
             <div class="field" style="margin:0;">
               <label>${t("专属人设提示词（System Prompt，留空使用默认）", "Custom System Prompt (optional)")}</label>
-              <textarea id="slot-sysp-${s.id}" rows="2" style="width:100%;background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;padding:7px 9px;color:var(--text);font-family:inherit;font-size:12px;resize:vertical;" placeholder="${t("直接用大白话写明该角色的职责、输出风格与红线规范…", "Describe this role's persona, tone, and constraints in plain language...")}">${escapeHtml(r.system_prompt || "")}</textarea>
+              <textarea id="slot-sysp-${escapeHtml(s.id)}" rows="2" style="width:100%;background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;padding:7px 9px;color:var(--text);font-family:inherit;font-size:12px;resize:vertical;" placeholder="${t("直接用大白话写明该角色的职责、输出风格与红线规范…", "Describe this role's persona, tone, and constraints in plain language...")}">${escapeHtml(r.system_prompt || "")}</textarea>
             </div>
           </div>
         </details>
       </div>`;
-  }).join("");
+  }).join("") + modalAddHtml;
 
   document.getElementById("enginesListBox").innerHTML = engines.map(e => `
     <div class="gate-row" style="padding:5px 0;border-bottom:1px solid var(--border);">
@@ -1252,12 +1395,17 @@ function resetRolePersona(slotId) {
 
 async function saveRoleBindings(scope = "workspace") {
   const payload = {};
-  ["planner", "builder", "reviewer"].forEach(slotId => {
+  const roleCards = document.querySelectorAll("#roleSlotsContainer [data-role-slot]");
+  const slotIds = roleCards.length
+    ? Array.from(roleCards).map(el => el.dataset.roleSlot)
+    : Object.keys(latestSnap?.roles || { planner: {}, builder: {}, reviewer: {} });
+  slotIds.forEach(slotId => {
     const engEl = document.getElementById("slot-eng-" + slotId);
     const modEl = document.getElementById("slot-model-" + slotId);
     const effEl = document.getElementById("slot-effort-" + slotId);
     const cLblEl = document.getElementById("slot-clabel-" + slotId);
     const sysEl = document.getElementById("slot-sysp-" + slotId);
+    const enEl = document.getElementById("slot-enabled-" + slotId);
     payload[slotId] = {
       engine: engEl ? engEl.value : "",
       model: modEl ? modEl.value.trim() : "",
@@ -1265,6 +1413,7 @@ async function saveRoleBindings(scope = "workspace") {
       custom_label: cLblEl ? cLblEl.value.trim() : "",
       system_prompt: sysEl ? sysEl.value.trim() : ""
     };
+    if (enEl) payload[slotId].enabled = Boolean(enEl.checked);
   });
   try {
     lastChatSig = "";
@@ -1544,8 +1693,10 @@ function showToast(txt) {
 // --- Mode Selector + @mention Auto-Routing ---
 function syncRailHighlight() {
   const job = latestSnap?.live_job || {};
-  const activeTarget = job.pending_approval ? "xiu" : (currentMode === "pipeline" ? "agy" : currentMode);
-  ["xiu", "agy", "codex", "dsh"].forEach(id => {
+  const firstRosterId = latestSnap?.roster?.[0]?.id;
+  const firstNode = firstRosterId ? slotToNodeId(firstRosterId) : "agy";
+  const activeTarget = job.pending_approval ? "xiu" : (currentMode === "pipeline" ? firstNode : currentMode);
+  Object.keys(RAIL_Y).forEach(id => {
     const node = document.getElementById("rnode-" + id);
     if (!node) return;
     const isRun = !!job.running && job.agent === id;
@@ -2092,39 +2243,32 @@ function render(snap, fromMutation = false) {
   const rTitleXiu = document.getElementById("rtitle-xiu");
   if (rTitleXiu) rTitleXiu.textContent = `${userName} · ${t("发起人 / 终审", "Producer / Review")}`;
 
-  // Dynamic Role Slots & Engine Badges
+  // Dynamic Role Slots, Adaptive N-Node Vertical Relay Rail & Composer Pills
   const roles = snap.roles || {};
+  const roster = Array.isArray(snap.roster) && snap.roster.length
+    ? snap.roster
+    : ["planner", "builder", "reviewer"].map(id => roles[id]).filter(Boolean);
   const engines = snap.engines || [];
   const engMap = Object.fromEntries(engines.map(e => [e.id, e]));
   const isAigc = activeWs.type === "aigc-studio";
 
-  const slotToNode = { planner: "agy", builder: "codex", reviewer: "dsh" };
-  ["planner", "builder", "reviewer"].forEach(slotId => {
-    const r = roles[slotId] || {};
+  const roleShortFor = (r) => {
+    const slotId = r.id;
+    const defaultShort = isAigc
+      ? (slotId === "planner" ? t("编剧", "Script") : slotId === "builder" ? t("制片", "Produce") : slotId === "reviewer" ? t("审片", "Review") : (r.label || slotId))
+      : (slotId === "planner" ? t("策划", "Plan") : slotId === "builder" ? t("执行", "Build") : slotId === "reviewer" ? t("质检", "Review") : (r.label || slotId));
+    return (r.custom_label || "").trim() || defaultShort;
+  };
+
+  Object.values(roles).forEach(r => {
+    if (!r || !r.id) return;
     const hasEngine = Boolean(r.engine);
     const eng = (hasEngine && engMap[r.engine]) ? engMap[r.engine] : { short: "", name: t("未配置", "Unconfigured"), ready: false };
-    const dot = document.getElementById("dot-" + slotId);
+    const dot = document.getElementById("dot-" + r.id);
     if (dot) dot.className = "s-dot " + (hasEngine && eng.ready ? "on" : "off");
-
-    const nodeId = slotToNode[slotId];
-    const defaultShort = isAigc
-      ? (slotId === "planner" ? t("编剧", "Script") : slotId === "builder" ? t("制片", "Produce") : t("审片", "Review"))
-      : (slotId === "planner" ? t("策划", "Plan") : slotId === "builder" ? t("执行", "Build") : t("质检", "Review"));
-    const roleShort = (r.custom_label || "").trim() || defaultShort;
+    const nodeId = slotToNodeId(r.id);
+    const roleShort = roleShortFor(r);
     const badge = hasEngine ? (r.badge || eng.short || "AI") : "";
-
-    const pLbl = document.getElementById("pill-label-" + nodeId);
-    if (pLbl) pLbl.textContent = badge ? `${roleShort} · ${badge}` : `${roleShort} · ${t("未配", "Unset")}`;
-
-    const rTxt = document.getElementById("rtxt-" + nodeId);
-    if (rTxt) rTxt.textContent = badge || t("未配", "—");
-    const rTitle = document.getElementById("rtitle-" + nodeId);
-    if (rTitle) {
-      rTitle.textContent = hasEngine
-        ? `${roleShort} · ${eng.name}${r.model ? ' (' + r.model + ')' : ''}`
-        : `${roleShort} · ${t("尚未配置引擎", "No engine configured")}`;
-    }
-
     const roleDisplay = (r.custom_label || "").trim() || (isAigc ? (r.aigc_label || roleShort) : (r.label || roleShort));
     ROLE_INFO[nodeId] = {
       name: hasEngine ? eng.name : roleDisplay,
@@ -2132,6 +2276,75 @@ function render(snap, fromMutation = false) {
       badge
     };
   });
+
+  const activeNodeIds = roster.map(r => slotToNodeId(r.id));
+  if (currentMode !== "pipeline" && activeNodeIds.length && !activeNodeIds.includes(currentMode)) {
+    currentMode = activeNodeIds[0];
+  }
+
+  const railSig = JSON.stringify({
+    lang: currentLang, userShort, userName, mode: currentMode,
+    items: roster.map((r, i) => [r.id, roleShortFor(r), r.badge || "", r.engine || "", r.model || "", i])
+  });
+  if (window._lastRailSig !== railSig) {
+    window._lastRailSig = railSig;
+    const pillsEl = document.getElementById("modePills");
+    if (pillsEl) {
+      const rolePillsHtml = roster.map((r, idx) => {
+        const nodeId = slotToNodeId(r.id);
+        const roleShort = roleShortFor(r);
+        const badge = r.engine ? (r.badge || engMap[r.engine]?.short || "AI") : "";
+        const color = roleAccentColor(r.id, idx);
+        const lbl = badge ? `${roleShort} · ${badge}` : `${roleShort} · ${t("未配", "Unset")}`;
+        return `<button class="mode-pill ${currentMode === nodeId ? 'active' : ''}" data-mode="${escapeHtml(nodeId)}" onclick="setMode(this.dataset.mode)"><i class="agent-dot" style="width:6px;height:6px;background:${color};"></i><span>${escapeHtml(lbl)}</span></button>`;
+      }).join("");
+      const pipePillHtml = `<button class="mode-pill ${currentMode === 'pipeline' ? 'active' : ''}" data-mode="pipeline" onclick="setMode('pipeline')"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>${t("全自动流转", "Auto Pipeline")}</button>`;
+      pillsEl.innerHTML = rolePillsHtml + pipePillHtml;
+    }
+
+    const svgEl = document.getElementById("miniRelaySvg");
+    if (svgEl) {
+      const gap = roster.length <= 3 ? 76 : Math.max(44, Math.floor(290 / roster.length));
+      const lastY = 30 + roster.length * gap;
+      const totalH = lastY + 32;
+      svgEl.setAttribute("viewBox", `0 0 46 ${totalH}`);
+      const nextRailY = { xiu: 30 };
+      const firstNode = activeNodeIds[0] || "agy";
+      const nodesHtml = roster.map((r, idx) => {
+        const nodeId = slotToNodeId(r.id);
+        const y = 30 + (idx + 1) * gap;
+        nextRailY[nodeId] = y;
+        const roleShort = roleShortFor(r);
+        const eng = (r.engine && engMap[r.engine]) ? engMap[r.engine] : { name: t("尚未配置引擎", "No engine configured") };
+        const badge = r.engine ? (r.badge || eng.short || "AI") : t("未配", "—");
+        const color = roleAccentColor(r.id, idx);
+        const tip = r.engine ? `${roleShort} · ${eng.name}${r.model ? ' (' + r.model + ')' : ''}` : `${roleShort} · ${t("尚未配置引擎", "No engine configured")}`;
+        return `
+          <g class="rail-node" id="rnode-${escapeHtml(nodeId)}" transform="translate(23,${y})" data-mode="${escapeHtml(nodeId)}" onclick="setMode(this.dataset.mode)">
+            <title>${escapeHtml(tip)}</title>
+            <circle class="rail-ripple" id="rrip-${escapeHtml(nodeId)}" r="14" />
+            <circle class="rail-pulse" r="16" />
+            <circle class="rail-ring" r="13.5" />
+            <circle cx="9.5" cy="-9.5" r="2.8" fill="${color}" />
+            <text y="3.2" text-anchor="middle" class="rail-label">${escapeHtml(badge)}</text>
+          </g>`;
+      }).join("");
+      RAIL_Y = nextRailY;
+      svgEl.innerHTML = `
+        <line x1="23" y1="30" x2="23" y2="${lastY}" stroke="var(--border-strong)" stroke-width="1" stroke-dasharray="2 3" />
+        <path id="miniTrail" d="" fill="none" stroke="var(--text-sec)" stroke-width="1.4" opacity="0" />
+        <g class="rail-node" id="rnode-xiu" transform="translate(23,30)" data-mode="${escapeHtml(firstNode)}" onclick="setMode(this.dataset.mode)">
+          <title>${escapeHtml(userName)} · ${t("发起人 / 终审", "Producer / Review")}</title>
+          <circle class="rail-ripple" id="rrip-xiu" r="14" />
+          <circle class="rail-pulse" r="16" />
+          <circle class="rail-ring" r="13.5" />
+          <circle cx="9.5" cy="-9.5" r="2.8" fill="var(--c-xiu)" />
+          <text y="3.5" text-anchor="middle" class="rail-label">${escapeHtml(userShort)}</text>
+        </g>
+        ${nodesHtml}
+        <g id="miniPlane" opacity="0"><polygon points="-6,-4.5 7,0 -6,4.5 -3,0" fill="var(--text)" /></g>`;
+    }
+  }
 
   // Update Workspace Roster trigger pill & refresh open popover
   const activeSceneObj = (snap.scenes || []).find(sc => sc.id === snap.active_scene);
@@ -2452,7 +2665,9 @@ async function handlePrimarySend() {
     toggleSlashMenu(false);
     togglePlusMenu(false);
     render(res.snapshot, true);
-    flyMiniPlane("xiu", currentMode === "pipeline" ? "agy" : currentMode);
+    const firstRosterId = res.snapshot?.roster?.[0]?.id;
+    const firstNode = firstRosterId ? slotToNodeId(firstRosterId) : "agy";
+    flyMiniPlane("xiu", currentMode === "pipeline" ? firstNode : currentMode);
   } catch (e) { showToast(e.message); }
 }
 
