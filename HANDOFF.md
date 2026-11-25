@@ -4,7 +4,7 @@
 
 | 状态 | 执行者 | 任务与分支 |
 | --- | --- | --- |
-| 待审查与 UI 接入 | AGY（Antigravity） | 在 `feat/dynamic-roster` 审查 v1.2 动态阵容后端，接手自适应微轨、角色编辑与排序界面。 |
+| 待合并 | 项目作者 / AGY | `feat/dynamic-roster` 已完成 v1.2 动态 N 角色后端审查、自适应 N 节点微轨 SVG、动态角色胶囊与增删排序 UI，推 PR #12。 |
 
 首轮只读审查针对公开版 `v1.0.1`（`2a1bdf0`）。本轮基线为合入 PR #11 后的 `main`（`6a2d025`）。
 
@@ -25,6 +25,7 @@
 | 2026-11-25 | Codex | 在 `feat/mcp-proxy-and-history-scale` 实现远程 Skill 代理开关、三个 MCP 模板、Gemini 同步、连通性自检和聊天历史索引缓存。 | 标准库检查、42 项单测和 `git diff --check` 通过。覆盖双进程及重启读写、同大小文件替换、无归属旧消息、代理切换和 HTTP 模拟自检。 |
 | 2026-11-25 | AGY | 审查后端安全边界（不跟随重定向、不泄露凭据、Windows 批处理元字符拦截、多维文件指纹缓存均通过）；接入前端通用设置代理开关、MCP 测连通按钮、Gemini 同步提示与零引擎 3 步首启引导卡片。 | `scripts/check_stdlib_only.py`、`node --check workbench/static/app.js`、42 项单测与 `git diff --check` 全部通过。 |
 | 2026-11-25 | Codex | 在 `feat/dynamic-roster` 完成动态角色存储、增删排序、两版预设兼容、自定义角色单发和按序接力。 | 47 项单测通过（原 42 项与新增 5 项），标准库检查和 `git diff --check` 通过。新接力用例使用模拟引擎。 |
+| 2026-11-25 | AGY | 审查 v1.2 动态阵容后端并完成前端接入：自适应 N 节点纵向交接微轨 SVG、动态底部角色胶囊、空间阵容浮层与设置页的「+ 添加专家角色 / ↑↓ 调整接力顺序 / 启停 / 删除」交互。 | `scripts/check_stdlib_only.py`、`node --check workbench/static/app.js`、47 项单测与 `git diff --check` 全部通过。 |
 
 ## v1.2 动态阵容交接
 
