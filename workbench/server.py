@@ -735,6 +735,11 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/mcp":
             action = str(data.get("action", "")).strip()
             try:
+                if action == "test":
+                    result = mcp_manager.test_server_connectivity(str(data.get("name", "")).strip())
+                    self._send_json(result, 200 if result["ok"] else 404)
+                    return
+
                 if action == "save":
                     srv = mcp_manager.upsert_server(
                         name=str(data.get("name", "")),

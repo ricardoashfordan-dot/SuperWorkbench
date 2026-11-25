@@ -4,9 +4,9 @@
 
 | 状态 | 执行者 | 任务与分支 |
 | --- | --- | --- |
-| 待合并 | 项目作者 / AGY | `feat/workspace-rosters` 已完成后端审查、空间独立阵容浮层、模型简写头像与无假默认值清理，推 PR #7 待合并。 |
+| 待审查与 UI 接入 | AGY（Antigravity） | 在基于 `main`（`191a970`）的 `feat/mcp-proxy-and-history-scale` 上审查代理、MCP 自检和历史缓存，接入前端与零引擎首启引导卡片。 |
 
-首轮只读审查针对公开版 `v1.0.1`（`2a1bdf0`）。PR #1–#6 已合入 `main`，本轮基线是 PR #6 的合并提交 `17419b2`。
+首轮只读审查针对公开版 `v1.0.1`（`2a1bdf0`）。本轮基于已发布 `v1.1.0` 的 `main`（`191a970`）。
 
 ## 协作记录
 
@@ -22,6 +22,15 @@
 | 2026-11-24 | AGY | 安全审查 `workbench/skills.py` 与 `workbench/server.py`（SSRF、重定向白名单、路径穿越、符号链接、128 KB 流式限额均通过）；在 `workbench/static/{index.html,app.css,app.js}` 接入分类筛选、标签搜索、GitHub 链接先预览审查再导入、一键导出及双语适配。 | `scripts/check_stdlib_only.py`、28 项单测、`node --check workbench/static/app.js` 与 `git diff --check` 全部通过。 |
 | 2026-11-24 | Codex | 在 `feat/workspace-rosters` 实现空间独立阵容、五套场景排班、引擎画像、模型简写和便携预设。新增 3D 美术技能与 Blender MCP 模板。 | 标准库检查、33 项单测和 `git diff --check` 均通过。单测覆盖跨空间审批恢复、无引擎与自定义引擎、预设校验和技能状态隔离。Blender 验证覆盖技能和模板加载。 |
 | 2026-11-24 | AGY | 审查 `feat/workspace-rosters` 后端并完成前端接入：主画布「本空间阵容」1 键场景浮层、按需自选推荐技能条、预设 JSON 导出/导入、全局/空间保存切换，全界面清除未安装 `AGY`/`CDX`/`DSH` 假占位并改用真实模型简写头像。 | `scripts/check_stdlib_only.py`、`node --check workbench/static/app.js`、33 项单测与 `git diff --check` 全部通过。 |
+| 2026-11-25 | Codex | 在 `feat/mcp-proxy-and-history-scale` 实现远程 Skill 代理开关、三个 MCP 模板、Gemini 同步、连通性自检和聊天历史索引缓存。 | 标准库检查、42 项单测和 `git diff --check` 通过。覆盖双进程及重启读写、同大小文件替换、无归属旧消息、代理切换和 HTTP 模拟自检。 |
+
+## 代理、MCP 与历史读取交接
+
+- `POST /api/settings` 接受布尔字段 `use_system_proxy_for_remote_skills`，可读 `snapshot.settings` 回填开关。默认直连，只有 JSON 布尔值 `true` 开启系统代理。两种模式均沿用 HTTPS 域名白名单、逐跳校验、最多 3 次跳转、8 秒总时限与 128 KB 上限。
+- `POST /api/mcp` 传 `{action: "test", name}`，直接返回 `{ok, reachable, transport, detail_zh, detail_en}`。已登记服务的 `ok` 表示自检请求已处理，使用 `reachable` 显示结果。名称不存在时返回 404。响应本身不附带快照。
+- stdio 自检只检索可执行文件。HTTP 自检直连端点，总时限 4 秒，先发 HEAD，遇到 405 才用 GET 读取最多 1 KB。收到 HTTP 状态即可判为端点可达，并在说明里展示状态码。自检覆盖网络可达性，跳转目标和服务凭据都不出现在返回结果里。
+- `snapshot.mcp.templates` 新增 `fetch`、`context7`、`memory`。Gemini 同步使用用户级配置，Windows 批处理启动器遇到无法安全传递的参数时会返回该 CLI 的失败结果。Gemini 与 HTTP 验证均使用模拟调用。[Gemini CLI MCP 命令参考](https://geminicli.com/docs/tools/mcp-server/#managing-mcp-servers-with-gemini-mcp)
+- 历史仍保存为 `messages.json` 数组。读取按文件指纹更新进程内索引，并用工作区和线程定位消息。写入沿用跨进程锁、原子替换和 `messages.sequence.json`；每次写入仍重写 JSON 文件。12,000 条样本中读取目标线程 120 条，100 次平均耗时从全量解析的 11.24 ms 降至缓存命中的 0.25 ms，该数据仅衡量历史读取。
 
 ## 工作空间阵容交接
 

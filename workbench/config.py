@@ -115,12 +115,12 @@ def get_active_workspace() -> dict:
 
 
 def load_app_settings() -> dict:
-    ensure_data_dir()
     defaults = {
         "approve_before_build": False,
         "user_name": "我",
         "lang": "zh",
         "exit_on_close": False,
+        "use_system_proxy_for_remote_skills": False,
     }
     raw = read_json(SETTINGS_PATH, {})
     if not isinstance(raw, dict):
@@ -132,6 +132,7 @@ def load_app_settings() -> dict:
         "user_name": uname,
         "lang": lang,
         "exit_on_close": bool(raw.get("exit_on_close", False)),
+        "use_system_proxy_for_remote_skills": raw.get("use_system_proxy_for_remote_skills") is True,
     }
 
 
@@ -146,6 +147,8 @@ def save_app_settings(patch: dict) -> dict:
         cur["lang"] = "en" if str(patch.get("lang", "zh")).lower() == "en" else "zh"
     if "exit_on_close" in patch:
         cur["exit_on_close"] = bool(patch["exit_on_close"])
+    if "use_system_proxy_for_remote_skills" in patch:
+        cur["use_system_proxy_for_remote_skills"] = patch["use_system_proxy_for_remote_skills"] is True
     write_json(SETTINGS_PATH, cur)
     return cur
 
