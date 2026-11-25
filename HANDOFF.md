@@ -4,7 +4,7 @@
 
 | 状态 | 执行者 | 任务与分支 |
 | --- | --- | --- |
-| 待审查与 UI 接入 | AGY（Antigravity） | 在基于 `main`（`191a970`）的 `feat/mcp-proxy-and-history-scale` 上审查代理、MCP 自检和历史缓存，接入前端与零引擎首启引导卡片。 |
+| 待合并 | 项目作者 / AGY | `feat/mcp-proxy-and-history-scale` 已完成后端审查、代理开关、MCP 测连通按钮、Gemini 同步提示与零引擎首启 3 步引导，推 PR #11。 |
 
 首轮只读审查针对公开版 `v1.0.1`（`2a1bdf0`）。本轮基于已发布 `v1.1.0` 的 `main`（`191a970`）。
 
@@ -23,6 +23,7 @@
 | 2026-11-24 | Codex | 在 `feat/workspace-rosters` 实现空间独立阵容、五套场景排班、引擎画像、模型简写和便携预设。新增 3D 美术技能与 Blender MCP 模板。 | 标准库检查、33 项单测和 `git diff --check` 均通过。单测覆盖跨空间审批恢复、无引擎与自定义引擎、预设校验和技能状态隔离。Blender 验证覆盖技能和模板加载。 |
 | 2026-11-24 | AGY | 审查 `feat/workspace-rosters` 后端并完成前端接入：主画布「本空间阵容」1 键场景浮层、按需自选推荐技能条、预设 JSON 导出/导入、全局/空间保存切换，全界面清除未安装 `AGY`/`CDX`/`DSH` 假占位并改用真实模型简写头像。 | `scripts/check_stdlib_only.py`、`node --check workbench/static/app.js`、33 项单测与 `git diff --check` 全部通过。 |
 | 2026-11-25 | Codex | 在 `feat/mcp-proxy-and-history-scale` 实现远程 Skill 代理开关、三个 MCP 模板、Gemini 同步、连通性自检和聊天历史索引缓存。 | 标准库检查、42 项单测和 `git diff --check` 通过。覆盖双进程及重启读写、同大小文件替换、无归属旧消息、代理切换和 HTTP 模拟自检。 |
+| 2026-11-25 | AGY | 审查后端安全边界（不跟随重定向、不泄露凭据、Windows 批处理元字符拦截、多维文件指纹缓存均通过）；接入前端通用设置代理开关、MCP 测连通按钮、Gemini 同步提示与零引擎 3 步首启引导卡片。 | `scripts/check_stdlib_only.py`、`node --check workbench/static/app.js`、42 项单测与 `git diff --check` 全部通过。 |
 
 ## 代理、MCP 与历史读取交接
 

@@ -164,6 +164,9 @@ function fmtSkillDesc(skill) {
 function fmtMcpTemplate(tpl) {
   if (currentLang !== "en") return { title: tpl.title, desc: tpl.desc };
   const enMap = {
+    fetch: ["Web Fetch", "Fetch a web page and extract clean readable content (requires uvx)"],
+    context7: ["Context7 Docs", "Look up up-to-date framework documentation and examples by library/version (requires npx)"],
+    memory: ["Knowledge Graph Memory", "Persist entities, relations, and observations as long-term memory (requires npx)"],
     playwright: ["Playwright Browser", "Let AI open web pages, take screenshots, click buttons, and test UI flows"],
     github: ["GitHub Collaboration", "Query issues, open PRs, search repositories, and publish releases"],
     figma: ["Figma Design Reader", "Read Figma layers, colors, and layout specs directly into production code"],
@@ -237,6 +240,8 @@ const STATIC_I18N = [
   ["#lblPrefExitTitle", "关闭窗口时同时退出后台服务", "Stop Background Service on Window Close"],
   ["#lblPrefExitDesc", "默认关闭（点右上角 × 仅关窗口，后台保持运行以便下次秒开）；开启后关窗口将自动停掉后台。", "Off by default (clicking × only closes the window for instant reopen); when enabled, closing the window stops the background service."],
   ["#btnQuitBackend", "立即退出后台", "Quit Service Now"],
+  ["#lblPrefProxyTitle", "远程导入 Skill 时使用系统代理", "Use System Proxy for Remote Skill Import"],
+  ["#lblPrefProxyDesc", "默认关闭（强制直连 GitHub，隔离更严格）；若本机需经系统代理访问 GitHub 可按需开启（仍受 HTTPS 与白名单限制）。", "Off by default (direct GitHub connection). Enable if your network requires a local proxy to reach GitHub (HTTPS allowlist still enforced)."],
   // Pane 1: Skills
   ["#pane-skills > details.explain-fold > summary > span:first-child", "ⓘ 什么是 Skill（技能）？点此查看说明", "ⓘ What is a Skill? Click to expand"],
   ["#skillFilterBar button[data-sf='all']", "全部", "All"],
@@ -1213,6 +1218,8 @@ function renderStudioModal() {
   if (gateToggle) gateToggle.checked = Boolean(latestSnap?.settings?.approve_before_build);
   const exitToggle = document.getElementById("toggleExitOnClose");
   if (exitToggle) exitToggle.checked = Boolean(latestSnap?.settings?.exit_on_close);
+  const proxyToggle = document.getElementById("toggleSkillProxy");
+  if (proxyToggle) proxyToggle.checked = Boolean(latestSnap?.settings?.use_system_proxy_for_remote_skills);
   const uNameEl = document.getElementById("inputUserName");
   const curUName = latestSnap?.settings?.user_name || "我";
   if (uNameEl && document.activeElement !== uNameEl) uNameEl.value = curUName;
@@ -1340,7 +1347,7 @@ async function deleteCustomEngine(id) {
 function renderMcpPane() {
   const mcp = latestSnap?.mcp || { servers: [], templates: [], last_scan: {} };
   const clis = latestSnap?.clis || {};
-  const readyClis = ["agy", "codex", "claude"].filter(c => clis[c]?.installed).map(c => c.toUpperCase());
+  const readyClis = ["agy", "codex", "claude", "gemini"].filter(c => clis[c]?.installed).map(c => c.toUpperCase());
   const hint = document.getElementById("mcpCliHint");
   if (hint) {
     hint.textContent = readyClis.length
@@ -1389,7 +1396,8 @@ function renderMcpPane() {
                 <span class="skill-src">${escapeHtml(s.name)} · ${escapeHtml(s.transport)}</span>
                 ${synced || `<span class="skill-src">${t("未同步 CLI", "Not synced")}</span>`}
               </div>
-              <div style="display:flex;gap:5px;">
+              <div style="display:flex;gap:5px;flex-wrap:wrap;">
+                <button class="btn sm" data-mcp="${escapeHtml(s.name)}" onclick="testMcpServer(this.dataset.mcp, this)">${t("测连通", "Test")}</button>
                 <button class="btn sm" onclick="editMcpServer('${escapeHtml(s.name)}')">${t("编辑", "Edit")}</button>
                 <button class="btn sm" onclick="syncMcpServer('${escapeHtml(s.name)}')">${t("同步 CLI", "Sync CLI")}</button>
                 <button class="btn sm danger" onclick="deleteMcpServer('${escapeHtml(s.name)}')">${t("删除", "Delete")}</button>
@@ -1397,6 +1405,7 @@ function renderMcpPane() {
             </div>
             ${s.desc ? `<div style="font-size:12px;color:var(--text-sec);">${escapeHtml(s.desc)}</div>` : ""}
             <div style="font-size:11px;color:var(--text-muted);font-family:Consolas,monospace;word-break:break-all;">${escapeHtml(endpoint)}</div>
+            <div id="mcp-probe-${escapeHtml(s.name)}" style="display:none;font-size:11.5px;margin-top:2px;"></div>
           </div>`;
       }).join("");
     }
@@ -1811,10 +1820,27 @@ function renderChat(msgs, job) {
           ${hasUnreadyRole ? `<span class="env-sep">|</span><button class="onboard-link" style="color:var(--c-agy);font-weight:550;" onclick="autoRecommendRoles(true)">${t("一键匹配最佳角色", "Auto-Bind Best Roles")}</button>` : ""}
         </div>`
       : `<div class="onboard-env" style="border-color:rgba(245,158,11,0.35);">
-          <span class="env-pill"><i class="s-dot off" style="background:var(--c-warn);"></i><span>${t("尚未检测到本地 CLI", "No local CLI detected")}</span></span>
-          <span class="env-sep">·</span>
-          <button class="onboard-link" style="color:var(--c-warn);font-weight:550;" onclick="openStudioModal('engines')">${t("10 秒接入 Ollama 或云端 API →", "Connect Ollama or Cloud API in 10s →")}</button>
+          <span class="env-pill"><i class="s-dot off" style="background:var(--c-warn);"></i><span>${t("尚未配置任何引擎 · 任选下方 1 种方式 1 分钟开始", "No engine configured yet · Pick any 1 option below to start")}</span></span>
         </div>`;
+
+    const zeroEngineCards = !readyEngines.length ? `
+      <div class="starter-grid">
+        <div class="starter-card" onclick="openGuideModal()">
+          <div class="starter-tag">${t("方式 1 · 推荐改代码", "Option 1 · Local Coding")}</div>
+          <div class="starter-title">${t("安装 1 个本地 AI CLI", "Install 1 Local AI CLI")}</div>
+          <div class="starter-desc">${t("支持 Codex / Claude Code / Gemini CLI / AGY / DSH，装好登录后工作台自动识别", "Codex, Claude Code, Gemini CLI, AGY, or DSH — auto-detected after sign-in")}</div>
+        </div>
+        <div class="starter-card" onclick="openStudioModal('engines'); presetEngine('deepseek');">
+          <div class="starter-tag">${t("方式 2 · 10 秒上手", "Option 2 · 10s Setup")}</div>
+          <div class="starter-title">${t("填写云端 API Key", "Connect a Cloud API")}</div>
+          <div class="starter-desc">${t("直接接入 DeepSeek / OpenRouter / Kimi / OpenAI 兼容接口，无需安装命令行工具", "Connect DeepSeek, OpenRouter, Kimi, or any OpenAI-compatible API right away")}</div>
+        </div>
+        <div class="starter-card" onclick="openStudioModal('engines'); presetEngine('ollama');">
+          <div class="starter-tag">${t("方式 3 · 0 费用离线", "Option 3 · Free & Offline")}</div>
+          <div class="starter-title">${t("接入本机 Ollama 模型", "Use Local Ollama")}</div>
+          <div class="starter-desc">${t("零 API 账单、完全离线运行，点此一键填好本机 11434 端点并绑定角色", "Zero API bill, 100% offline — pre-fills localhost:11434 in one click")}</div>
+        </div>
+      </div>` : "";
 
     const starters = isAigc
       ? [
@@ -1841,14 +1867,14 @@ function renderChat(msgs, job) {
         <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">${t("当前空间", "Workspace")} · ${escapeHtml(wsName)}</div>
         <h3 style="font-size:23px;font-weight:600;letter-spacing:-0.02em;margin-bottom:14px;">${escapeHtml(greetingTitle)}</h3>
         ${envHtml}
-        <div class="starter-grid">
+        ${zeroEngineCards || `<div class="starter-grid">
           ${starters.map((st, idx) => `
             <div class="starter-card" onclick="applyStarter(${idx})">
               <div class="starter-tag">${escapeHtml(st.tag)}</div>
               <div class="starter-title">${escapeHtml(st.title)}</div>
               <div class="starter-desc">${escapeHtml(st.desc)}</div>
             </div>`).join("")}
-        </div>
+        </div>`}
         <div class="onboard-links">
           <button class="onboard-link" onclick="openStudioModal('general')">${t("通用偏好", "General")}</button>
           <span>·</span>
@@ -2533,6 +2559,46 @@ async function toggleApproveBeforeBuild(enabled) {
     latestSnap = res.snapshot;
     render(res.snapshot, true);
     showToast(enabled ? t("已开启：全自动执行前暂停审批", "Enabled: Pause for approval before build") : t("已关闭：全自动流水线直通执行", "Disabled: Auto pipeline runs straight through"));
+  } catch (e) { showToast(e.message); }
+}
+
+async function testMcpServer(name, btn) {
+  const out = document.getElementById("mcp-probe-" + name);
+  if (btn) btn.disabled = true;
+  if (out) {
+    out.style.display = "block";
+    out.style.color = "var(--text-muted)";
+    out.textContent = t("正在自检连通性…", "Checking connectivity…");
+  }
+  try {
+    const res = await api("/api/mcp", { action: "test", name });
+    const msg = currentLang === "en" ? (res.detail_en || res.detail_zh || "") : (res.detail_zh || res.detail_en || "");
+    if (out) {
+      out.style.display = "block";
+      out.style.color = res.reachable ? "var(--c-dsh)" : "var(--c-warn)";
+      out.textContent = `${res.reachable ? "✓ " : "✗ "}${msg}`;
+    }
+    showToast(`${res.reachable ? "✓ " : "✗ "}${msg}`);
+  } catch (e) {
+    if (out) {
+      out.style.display = "block";
+      out.style.color = "var(--c-danger)";
+      out.textContent = e.message;
+    }
+    showToast(e.message);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function toggleRemoteSkillProxy(enabled) {
+  try {
+    const res = await api("/api/settings", { use_system_proxy_for_remote_skills: Boolean(enabled) });
+    latestSnap = res.snapshot;
+    render(res.snapshot, true);
+    showToast(enabled
+      ? t("已开启：远程导入 Skill 将使用系统代理", "Enabled: Remote skill import uses system proxy")
+      : t("已恢复默认：远程导入 Skill 强制直连", "Default: Remote skill import connects directly"));
   } catch (e) { showToast(e.message); }
 }
 
